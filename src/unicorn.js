@@ -26,7 +26,8 @@ let tail, mane, gait, legState, knee = { x: 0, y: 0 };
 export function initUnicorn(p) {
   const cx = p.x + p.w / 2, by = p.y + 6;
   tail = makeChain(7, 3, cx, by);
-  mane = makeChain(5, 2.4, cx, by);
+  // Mane is a short, stiff tuft that rides the neck crest (not a second tail).
+  mane = makeChain(4, 2.2, cx, by);
   gait = 0;
   legState = LEGS.map((l) => ({ fx: cx, fy: p.y + p.h }));
 }
@@ -65,12 +66,14 @@ export function updateUnicorn(p, dt) {
     s.fy += (ty - s.fy) * 0.4;
   }
 
-  // Tail & mane: a directional rest bias (stream backward + slight droop) plus
-  // the body's velocity so the strands lag and whip during motion.
+  // Tail & mane: a directional rest bias plus the body's velocity so the
+  // strands lag and whip during motion.
   const dragX = -p.vx * dt * 0.5, dragY = -p.vy * dt * 0.25;
-  // Tail off the rump; mane off the poll, both flowing back (-f).
+  // Tail off the rump, streaming back and down.
   updateChain(tail, cx - f * 10, by - 3, 0.9, -f * 0.35 + dragX, 0.18 + dragY);
-  updateChain(mane, cx + f * 11, by - 7, 0.85, -f * 0.3 + dragX * 0.6, 0.12 + dragY);
+  // Mane off the poll: mostly droops onto the neck crest with only a light
+  // backward lean and half the whip, so it reads as a mane, not a tail.
+  updateChain(mane, cx + f * 12, by - 8, 0.8, -f * 0.16 + dragX * 0.35, 0.28 + dragY * 0.7);
 }
 
 function strand(ctx, chain, width) {
@@ -137,7 +140,7 @@ export function drawUnicorn(ctx, p, ix, iy) {
   ctx.fill();
 
   // Mane down the neck.
-  strand(ctx, mane, 2.4);
+  strand(ctx, mane, 3.8);
 
   // Head.
   const hx = cx + f * 14, hy = p.y - 2;
