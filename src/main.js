@@ -47,15 +47,15 @@ function respawn() {
 
 // Dev-only inspection hook. `import.meta.env.DEV` is false in the production
 // build, so terser dead-code-strips this whole block from the 13KB bundle.
-if (import.meta.env.DEV) window.P = player;
+if (import.meta.env.DEV) { window.P = player; window.LV = level; }
 
 function update() {
   prevX = player.x;
   prevY = player.y;
-  updatePlayer(player, STEP, solids);
+  updatePlayer(player, STEP, solids, hazards);
 
-  // Death: touched a spike, or fell out of the level.
-  if (player.y > HEIGHT + 40 || hazards.some((h) => overlap(player, h))) respawn();
+  // Death: fell out of the level, or touched a spike while not invincible.
+  if (player.y > HEIGHT + 40 || (!player.inv && hazards.some((h) => overlap(player, h)))) respawn();
 
   updateUnicorn(player, STEP);
 }
@@ -112,6 +112,16 @@ function render(alpha) {
   // Interpolated player position for smooth rendering.
   const x = prevX + (player.x - prevX) * alpha;
   const y = prevY + (player.y - prevY) * alpha;
+
+  // Fire dash: red afterimage streaks trailing the burst.
+  if (player.dashT > 0) {
+    ctx.fillStyle = COLORS[0];
+    for (let i = 1; i <= 3; i++) {
+      ctx.globalAlpha = 0.25 * (player.dashT / 12) / i;
+      ctx.fillRect(x - player.face * i * 7, y, player.w, player.h);
+    }
+    ctx.globalAlpha = 1;
+  }
 
   drawUnicorn(ctx, player, x, y);
 

@@ -2,7 +2,8 @@
 // the loop steps this at a fixed dt (1/60s). Timers are counted in frames since
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
-import { moveX, moveY } from './physics.js';
+import { moveX, moveY, overlap } from './physics.js';
+import { RED } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -18,6 +19,11 @@ const COYOTE = 6;          // frames you can still jump after leaving a ledge
 const BUFFER = 6;          // frames a jump press is remembered before landing
 const SWAP_DELAY = 6;      // ~0.1s element-swap lock
 
+// Fire (Red) dash.
+const DASH_SPEED = 360;    // px/s burst forward
+const DASH_DUR = 12;       // frames of dash
+const DASH_CD = 30;        // frames of cooldown after it ends
+
 export function makePlayer(x, y) {
   return {
     x, y, w: 12, h: 16,
@@ -29,18 +35,43 @@ export function makePlayer(x, y) {
     swapLock: 0,
     face: 1,
     glow: 0,        // brief feedback on skill press
+    dashT: 0,       // remaining dash frames
+    cd: 0,          // skill cooldown frames
+    inv: 0,         // invincibility frames (no hazard death)
   };
 }
 
-export function updatePlayer(p, dt, solids) {
+export function updatePlayer(p, dt, solids, hazards) {
   // --- Element swap (0.1s lock) -------------------------------------------
   if (p.swapLock > 0) p.swapLock--;
   if (input.pressed(SWAP) && p.swapLock === 0) {
     p.el = (p.el + 1) % 7;
     p.swapLock = SWAP_DELAY;
   }
-  if (input.pressed(SKILL)) p.glow = 12;
   if (p.glow > 0) p.glow--;
+  if (p.cd > 0) p.cd--;
+
+  // --- Skill activation ----------------------------------------------------
+  if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0) {
+    p.glow = 12;
+    if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; } // Fire dash
+  }
+
+  // --- Fire dash (overrides normal movement while active) ------------------
+  if (p.dashT > 0) {
+    p.vy = 0;
+    const hit = moveX(p, p.face * DASH_SPEED * dt, solids);
+    // Burn through any spikes we pass over.
+    if (hazards) for (let i = hazards.length - 1; i >= 0; i--)
+      if (overlap(p, hazards[i])) hazards.splice(i, 1);
+    p.vx = p.face * DASH_SPEED;
+    p.dashT--;
+    if (p.inv > 0) p.inv--;
+    if (hit || p.dashT === 0) { p.dashT = 0; p.inv = 0; p.cd = DASH_CD; }
+    input.clear();
+    return;
+  }
+  if (p.inv > 0) p.inv--;
 
   // --- Jump timers ---------------------------------------------------------
   // Buffer remembers a press; coyote remembers recent ground contact.
