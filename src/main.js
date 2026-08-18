@@ -133,6 +133,19 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
+  // Light blink: a fading yellow streak between origin and destination.
+  if (player.blinkT > 0) {
+    ctx.strokeStyle = COLORS[2];
+    ctx.globalAlpha = (player.blinkT / 10) * 0.8;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(player.bx0 + player.w / 2, player.by0 + player.h / 2);
+    ctx.lineTo(x + player.w / 2, y + player.h / 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   // Earth slam: expanding orange shockwave ring at the impact point.
   if (player.shockT > 0) {
     const t = 1 - player.shockT / 16; // 0 -> 1 as it expands

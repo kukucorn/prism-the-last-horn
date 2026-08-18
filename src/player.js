@@ -3,7 +3,7 @@
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
-import { RED, ORANGE } from './palette.js';
+import { RED, ORANGE, YELLOW } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -30,6 +30,11 @@ const SHOCK_R = 30;        // shockwave rock-shatter radius
 const SHOCK_DUR = 16;      // frames the shockwave ring animates
 const EARTH_CD = 20;       // cooldown after a slam lands
 
+// Light (Yellow) blink.
+const BLINK_DIST = 64;     // px teleported forward
+const BLINK_DUR = 10;      // frames the light streak lingers
+const LIGHT_CD = 40;       // cooldown
+
 export function makePlayer(x, y) {
   return {
     x, y, w: 12, h: 16,
@@ -46,6 +51,8 @@ export function makePlayer(x, y) {
     inv: 0,         // invincibility frames (no hazard death)
     slam: false,    // Earth slam in progress
     shockT: 0,      // shockwave ring animation frames
+    blinkT: 0,      // light-streak animation frames
+    bx0: 0, by0: 0, // blink origin (for the streak)
   };
 }
 
@@ -62,12 +69,25 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   if (p.glow > 0) p.glow--;
   if (p.cd > 0) p.cd--;
   if (p.shockT > 0) p.shockT--;
+  if (p.blinkT > 0) p.blinkT--;
 
   // --- Skill activation ----------------------------------------------------
   if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0 && !p.slam) {
     p.glow = 12;
     if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; }   // Fire dash
     else if (p.el === ORANGE && !p.grounded) p.slam = true;       // Earth slam (air only)
+    else if (p.el === YELLOW) {                                   // Light blink
+      // Teleport forward, checking only the endpoint (so thin walls are
+      // passed through). Land at the farthest free spot within reach.
+      for (let d = BLINK_DIST; d >= 0; d -= 2) {
+        const box = { x: p.x + p.face * d, y: p.y, w: p.w, h: p.h };
+        if (!world.some((s) => overlap(box, s))) {
+          p.bx0 = p.x; p.by0 = p.y; p.blinkT = BLINK_DUR;
+          p.x = box.x; p.cd = LIGHT_CD;
+          break;
+        }
+      }
+    }
   }
 
   // --- Fire dash (overrides normal movement while active) ------------------
