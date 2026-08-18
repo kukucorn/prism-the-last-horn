@@ -1,12 +1,15 @@
-// PRISM — The Last Horn.  Day 3-4: procedural unicorn animation.
+// PRISM — The Last Horn.  Day 6: string tilemap parser drives the world.
 //
 // Logical WIDTH x HEIGHT space, letterboxed to the window. Simulation runs at a
 // fixed 1/60s step (accumulator) so movement is deterministic; rendering
 // interpolates between the previous and current body position for smoothness.
 import { COLORS, NAMES } from './palette.js';
 import { makePlayer, updatePlayer } from './player.js';
-import { SOLIDS, SPAWN } from './world.js';
+import { level } from './level.js';
+import { overlap } from './physics.js';
 import { initUnicorn, updateUnicorn, drawUnicorn } from './unicorn.js';
+
+const { solids, hazards, goal, spawn } = level;
 
 const WIDTH = 480, HEIGHT = 270;
 const STEP = 1 / 60;
@@ -30,9 +33,17 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-const player = makePlayer(SPAWN.x, SPAWN.y);
+// Spawn is a ground point (bottom-center of the S tile); seat the player's box
+// on it so the feet rest at the marked ground.
+const player = makePlayer(spawn.x - 6, spawn.y - 16);
 initUnicorn(player);
 let prevX = player.x, prevY = player.y;
+
+function respawn() {
+  player.x = spawn.x - 6; player.y = spawn.y - 16;
+  player.vx = player.vy = 0;
+  prevX = player.x; prevY = player.y;
+}
 
 // Dev-only inspection hook. `import.meta.env.DEV` is false in the production
 // build, so terser dead-code-strips this whole block from the 13KB bundle.
@@ -41,14 +52,10 @@ if (import.meta.env.DEV) window.P = player;
 function update() {
   prevX = player.x;
   prevY = player.y;
-  updatePlayer(player, STEP, SOLIDS);
+  updatePlayer(player, STEP, solids);
 
-  // Fell out of the arena? Respawn (temporary until hazards exist).
-  if (player.y > HEIGHT + 40) {
-    player.x = SPAWN.x; player.y = SPAWN.y;
-    player.vx = player.vy = 0;
-    prevX = player.x; prevY = player.y;
-  }
+  // Death: touched a spike, or fell out of the level.
+  if (player.y > HEIGHT + 40 || hazards.some((h) => overlap(player, h))) respawn();
 
   updateUnicorn(player, STEP);
 }
@@ -75,9 +82,31 @@ function render(alpha) {
   ctx.fillStyle = '#2a2a2a';
   ctx.strokeStyle = '#444';
   ctx.lineWidth = 1;
-  for (const s of SOLIDS) {
+  for (const s of solids) {
     ctx.fillRect(s.x, s.y, s.w, s.h);
     ctx.strokeRect(s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1);
+  }
+
+  // Spikes — upward triangles.
+  ctx.fillStyle = '#c33';
+  for (const h of hazards) {
+    ctx.beginPath();
+    ctx.moveTo(h.x, h.y + h.h);
+    ctx.lineTo(h.x + h.w / 2, h.y);
+    ctx.lineTo(h.x + h.w, h.y + h.h);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Goal — a pulsing rainbow beacon (stage-clear reveal comes in Phase 3).
+  if (goal) {
+    const t = (Math.sin(performance.now() / 300) + 1) / 2;
+    ctx.globalAlpha = 0.4 + t * 0.6;
+    ctx.fillStyle = COLORS[(performance.now() / 150 | 0) % 7];
+    ctx.beginPath();
+    ctx.arc(goal.x + goal.w / 2, goal.y + goal.h / 2, 5 + t * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   // Interpolated player position for smooth rendering.
