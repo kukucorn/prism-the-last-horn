@@ -1,4 +1,4 @@
-// PRISM — The Last Horn.  Day 2: AABB collision + 2D platformer physics.
+// PRISM — The Last Horn.  Day 3-4: procedural unicorn animation.
 //
 // Logical WIDTH x HEIGHT space, letterboxed to the window. Simulation runs at a
 // fixed 1/60s step (accumulator) so movement is deterministic; rendering
@@ -6,6 +6,7 @@
 import { COLORS, NAMES } from './palette.js';
 import { makePlayer, updatePlayer } from './player.js';
 import { SOLIDS, SPAWN } from './world.js';
+import { initUnicorn, updateUnicorn, drawUnicorn } from './unicorn.js';
 
 const WIDTH = 480, HEIGHT = 270;
 const STEP = 1 / 60;
@@ -13,24 +14,24 @@ const MAX_FRAME = 0.25;
 
 const canvas = document.getElementById('g');
 const ctx = canvas.getContext('2d');
-let scale = 1, offX = 0, offY = 0;
+let scale = 1, offX = 0, offY = 0, dpr = 1, vw = 0, vh = 0;
 
 function resize() {
-  const dpr = devicePixelRatio || 1;
-  const w = innerWidth, h = innerHeight;
-  scale = Math.min(w / WIDTH, h / HEIGHT);
-  offX = (w - WIDTH * scale) / 2;
-  offY = (h - HEIGHT * scale) / 2;
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dpr = devicePixelRatio || 1;
+  vw = innerWidth; vh = innerHeight;
+  scale = Math.min(vw / WIDTH, vh / HEIGHT);
+  offX = (vw - WIDTH * scale) / 2;
+  offY = (vh - HEIGHT * scale) / 2;
+  canvas.style.width = vw + 'px';
+  canvas.style.height = vh + 'px';
+  canvas.width = vw * dpr;
+  canvas.height = vh * dpr;
 }
 addEventListener('resize', resize);
 resize();
 
 const player = makePlayer(SPAWN.x, SPAWN.y);
+initUnicorn(player);
 let prevX = player.x, prevY = player.y;
 
 // Dev-only inspection hook. `import.meta.env.DEV` is false in the production
@@ -48,12 +49,24 @@ function update() {
     player.vx = player.vy = 0;
     prevX = player.x; prevY = player.y;
   }
+
+  updateUnicorn(player, STEP);
 }
 
 function render(alpha) {
+  // Clear the WHOLE canvas (letterbox included) so nothing drawn outside the
+  // logical viewport — e.g. the unicorn falling through a gap — leaves a trail.
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, vw, vh);
+
   ctx.save();
   ctx.translate(offX, offY);
   ctx.scale(scale, scale);
+  // Clip to the viewport so sprites can't spill into the letterbox bars.
+  ctx.beginPath();
+  ctx.rect(0, 0, WIDTH, HEIGHT);
+  ctx.clip();
 
   ctx.fillStyle = '#111';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -67,28 +80,14 @@ function render(alpha) {
     ctx.strokeRect(s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1);
   }
 
-  // Interpolated player.
+  // Interpolated player position for smooth rendering.
   const x = prevX + (player.x - prevX) * alpha;
   const y = prevY + (player.y - prevY) * alpha;
-  const color = COLORS[player.el];
 
-  if (player.glow > 0) {
-    ctx.globalAlpha = (player.glow / 12) * 0.6;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(x + player.w / 2, y + player.h / 2, 22, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, player.w, player.h);
-  // Facing eye.
-  ctx.fillStyle = '#111';
-  ctx.fillRect(x + player.w / 2 + player.face * 2 - 1, y + 4, 2, 2);
+  drawUnicorn(ctx, player, x, y);
 
   // HUD.
-  ctx.fillStyle = color;
+  ctx.fillStyle = COLORS[player.el];
   ctx.font = '10px monospace';
   ctx.fillText('PRISM — THE LAST HORN', 8, 14);
   ctx.fillStyle = player.grounded ? '#6c6' : '#888';
