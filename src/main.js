@@ -146,6 +146,33 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
+  // Nature double jump: green burst ring at the launch point.
+  if (player.djT > 0) {
+    const t = 1 - player.djT / 12;
+    ctx.strokeStyle = COLORS[3];
+    ctx.globalAlpha = (1 - t) * 0.8;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x + player.w / 2, y + player.h, 3 + t * 16, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Nature glide: faint green wings fanning from the body.
+  if (player.gliding) {
+    ctx.fillStyle = COLORS[3];
+    ctx.globalAlpha = 0.35;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + player.w / 2, y + 4);
+      ctx.lineTo(x + player.w / 2 - player.face * 10, y - 4 + s * 8);
+      ctx.lineTo(x + player.w / 2 - player.face * 4, y + 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Earth slam: expanding orange shockwave ring at the impact point.
   if (player.shockT > 0) {
     const t = 1 - player.shockT / 16; // 0 -> 1 as it expands

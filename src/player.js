@@ -3,7 +3,7 @@
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
-import { RED, ORANGE, YELLOW } from './palette.js';
+import { RED, ORANGE, YELLOW, GREEN } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -35,6 +35,10 @@ const BLINK_DIST = 64;     // px teleported forward
 const BLINK_DUR = 10;      // frames the light streak lingers
 const LIGHT_CD = 40;       // cooldown
 
+// Nature (Green) double jump + glide.
+const GLIDE_FALL = 120;    // capped fall speed while gliding
+const DJ_DUR = 12;         // frames the double-jump ring animates
+
 export function makePlayer(x, y) {
   return {
     x, y, w: 12, h: 16,
@@ -53,6 +57,9 @@ export function makePlayer(x, y) {
     shockT: 0,      // shockwave ring animation frames
     blinkT: 0,      // light-streak animation frames
     bx0: 0, by0: 0, // blink origin (for the streak)
+    doubleUsed: false, // Nature double jump spent this airtime
+    gliding: false, // currently gliding
+    djT: 0,         // double-jump ring animation frames
   };
 }
 
@@ -70,12 +77,16 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   if (p.cd > 0) p.cd--;
   if (p.shockT > 0) p.shockT--;
   if (p.blinkT > 0) p.blinkT--;
+  if (p.djT > 0) p.djT--;
 
   // --- Skill activation ----------------------------------------------------
   if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0 && !p.slam) {
     p.glow = 12;
     if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; }   // Fire dash
     else if (p.el === ORANGE && !p.grounded) p.slam = true;       // Earth slam (air only)
+    else if (p.el === GREEN && !p.grounded && !p.doubleUsed) {    // Nature double jump
+      p.vy = -JUMP_VEL; p.doubleUsed = true; p.djT = DJ_DUR;
+    }
     else if (p.el === YELLOW) {                                   // Light blink
       // Teleport forward, checking only the endpoint (so thin walls are
       // passed through). Land at the farthest free spot within reach.
@@ -156,11 +167,16 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   // --- Gravity -------------------------------------------------------------
   p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
 
+  // Nature glide: holding the skill while falling caps the descent speed.
+  p.gliding = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy > 0;
+  if (p.gliding) p.vy = Math.min(p.vy, GLIDE_FALL);
+
   // --- Integrate + collide (X then Y) --------------------------------------
   if (moveX(p, p.vx * dt, world)) p.vx = 0;
   const vhit = moveY(p, p.vy * dt, world);
   p.grounded = vhit > 0;
   if (vhit !== 0) p.vy = 0; // floor or ceiling stops vertical motion
+  if (p.grounded) p.doubleUsed = false; // recharge the double jump on landing
 
   input.clear();
 }
