@@ -9,7 +9,7 @@ import { level } from './level.js';
 import { overlap } from './physics.js';
 import { initUnicorn, updateUnicorn, drawUnicorn } from './unicorn.js';
 
-const { solids, hazards, goal, spawn } = level;
+const { solids, hazards, rocks, goal, spawn } = level;
 
 const WIDTH = 480, HEIGHT = 270;
 const STEP = 1 / 60;
@@ -52,7 +52,7 @@ if (import.meta.env.DEV) { window.P = player; window.LV = level; }
 function update() {
   prevX = player.x;
   prevY = player.y;
-  updatePlayer(player, STEP, solids, hazards);
+  updatePlayer(player, STEP, solids, hazards, rocks);
 
   // Death: fell out of the level, or touched a spike while not invincible.
   if (player.y > HEIGHT + 40 || (!player.inv && hazards.some((h) => overlap(player, h)))) respawn();
@@ -85,6 +85,16 @@ function render(alpha) {
   for (const s of solids) {
     ctx.fillRect(s.x, s.y, s.w, s.h);
     ctx.strokeRect(s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1);
+  }
+
+  // Breakable rocks — chunky brown blocks with a highlight bevel.
+  for (const r of rocks) {
+    ctx.fillStyle = '#6b5a45';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = '#7d6a52';
+    ctx.fillRect(r.x + 1, r.y + 1, r.w - 3, r.h - 3);
+    ctx.strokeStyle = '#4a3d30';
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
   }
 
   // Spikes — upward triangles.
@@ -120,6 +130,18 @@ function render(alpha) {
       ctx.globalAlpha = 0.25 * (player.dashT / 12) / i;
       ctx.fillRect(x - player.face * i * 7, y, player.w, player.h);
     }
+    ctx.globalAlpha = 1;
+  }
+
+  // Earth slam: expanding orange shockwave ring at the impact point.
+  if (player.shockT > 0) {
+    const t = 1 - player.shockT / 16; // 0 -> 1 as it expands
+    ctx.strokeStyle = COLORS[1];
+    ctx.globalAlpha = (1 - t) * 0.9;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x + player.w / 2, y + player.h, 4 + t * 30, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.globalAlpha = 1;
   }
 

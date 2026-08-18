@@ -3,7 +3,7 @@
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
-import { RED } from './palette.js';
+import { RED, ORANGE } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -24,6 +24,12 @@ const DASH_SPEED = 360;    // px/s burst forward
 const DASH_DUR = 12;       // frames of dash
 const DASH_CD = 30;        // frames of cooldown after it ends
 
+// Earth (Orange) slam.
+const SLAM_SPEED = 720;    // px/s straight down
+const SHOCK_R = 30;        // shockwave rock-shatter radius
+const SHOCK_DUR = 16;      // frames the shockwave ring animates
+const EARTH_CD = 20;       // cooldown after a slam lands
+
 export function makePlayer(x, y) {
   return {
     x, y, w: 12, h: 16,
@@ -38,10 +44,15 @@ export function makePlayer(x, y) {
     dashT: 0,       // remaining dash frames
     cd: 0,          // skill cooldown frames
     inv: 0,         // invincibility frames (no hazard death)
+    slam: false,    // Earth slam in progress
+    shockT: 0,      // shockwave ring animation frames
   };
 }
 
-export function updatePlayer(p, dt, solids, hazards) {
+// `rocks` are breakable; normal movement collides with them, but an Earth slam
+// plows through and shatters them.
+export function updatePlayer(p, dt, solids, hazards, rocks) {
+  const world = rocks && rocks.length ? solids.concat(rocks) : solids;
   // --- Element swap (0.1s lock) -------------------------------------------
   if (p.swapLock > 0) p.swapLock--;
   if (input.pressed(SWAP) && p.swapLock === 0) {
@@ -50,17 +61,19 @@ export function updatePlayer(p, dt, solids, hazards) {
   }
   if (p.glow > 0) p.glow--;
   if (p.cd > 0) p.cd--;
+  if (p.shockT > 0) p.shockT--;
 
   // --- Skill activation ----------------------------------------------------
-  if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0) {
+  if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0 && !p.slam) {
     p.glow = 12;
-    if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; } // Fire dash
+    if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; }   // Fire dash
+    else if (p.el === ORANGE && !p.grounded) p.slam = true;       // Earth slam (air only)
   }
 
   // --- Fire dash (overrides normal movement while active) ------------------
   if (p.dashT > 0) {
     p.vy = 0;
-    const hit = moveX(p, p.face * DASH_SPEED * dt, solids);
+    const hit = moveX(p, p.face * DASH_SPEED * dt, world);
     // Burn through any spikes we pass over.
     if (hazards) for (let i = hazards.length - 1; i >= 0; i--)
       if (overlap(p, hazards[i])) hazards.splice(i, 1);
@@ -72,6 +85,27 @@ export function updatePlayer(p, dt, solids, hazards) {
     return;
   }
   if (p.inv > 0) p.inv--;
+
+  // --- Earth slam (overrides normal movement while active) -----------------
+  if (p.slam) {
+    p.vx = 0;
+    p.vy = SLAM_SPEED;
+    // Smash any rocks we plow through on the way down.
+    if (rocks) for (let i = rocks.length - 1; i >= 0; i--)
+      if (overlap(p, rocks[i])) rocks.splice(i, 1);
+    const vhit = moveY(p, p.vy * dt, solids); // stop only on permanent ground
+    if (vhit > 0) {
+      // Impact shockwave: shatter every rock within radius of the feet.
+      const cx = p.x + p.w / 2, cy = p.y + p.h;
+      if (rocks) for (let i = rocks.length - 1; i >= 0; i--) {
+        const r = rocks[i];
+        if (Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy) <= SHOCK_R) rocks.splice(i, 1);
+      }
+      p.slam = false; p.vy = 0; p.grounded = true; p.shockT = SHOCK_DUR; p.cd = EARTH_CD;
+    }
+    input.clear();
+    return;
+  }
 
   // --- Jump timers ---------------------------------------------------------
   // Buffer remembers a press; coyote remembers recent ground contact.
@@ -103,8 +137,8 @@ export function updatePlayer(p, dt, solids, hazards) {
   p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
 
   // --- Integrate + collide (X then Y) --------------------------------------
-  if (moveX(p, p.vx * dt, solids)) p.vx = 0;
-  const vhit = moveY(p, p.vy * dt, solids);
+  if (moveX(p, p.vx * dt, world)) p.vx = 0;
+  const vhit = moveY(p, p.vy * dt, world);
   p.grounded = vhit > 0;
   if (vhit !== 0) p.vy = 0; // floor or ceiling stops vertical motion
 

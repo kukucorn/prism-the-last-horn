@@ -4,7 +4,7 @@
 // solid tiles into single wide AABBs, so a 40-wide floor is one collision box,
 // not forty — cheaper to test against and to compress.
 //
-// Legend:  #=solid  ^=spike(hazard)  S=spawn  G=goal  .=empty
+// Legend:  #=solid  O=breakable rock  ^=spike(hazard)  S=spawn  G=goal  .=empty
 export const TILE = 12;
 
 const LEVELS = [
@@ -28,15 +28,15 @@ const LEVELS = [
     '........................................', // 16
     '........................................', // 17
     '...........................####.........', // 18 P1
-    '........................................', // 19
-    '..S................^^^^^................', // 20 spawn + spike pit
+    '..........OO............................', // 19 rock mound (top)
+    '..S.....OOOOOO.....^^^^^................', // 20 spawn, rocks, spike pit
     '########################################', // 21 ground
   ],
 ];
 
 // Parse a row array into world geometry. Returns pixel-space rects/points.
 export function parseLevel(rows, tile) {
-  const solids = [], hazards = [];
+  const solids = [], hazards = [], rocks = [];
   let spawn = { x: tile, y: tile }, goal = null;
   for (let y = 0; y < rows.length; y++) {
     const row = rows[y];
@@ -48,6 +48,9 @@ export function parseLevel(rows, tile) {
         while (row[x + w] === '#') w++;
         solids.push({ x: x * tile, y: y * tile, w: w * tile, h: tile });
         x += w - 1;
+      } else if (c === 'O') {
+        // Rocks stay per-tile (unmerged) so an Earth slam can destroy them one by one.
+        rocks.push({ x: x * tile, y: y * tile, w: tile, h: tile });
       } else if (c === '^') {
         hazards.push({ x: x * tile, y: y * tile, w: tile, h: tile });
       } else if (c === 'S') {
@@ -58,7 +61,7 @@ export function parseLevel(rows, tile) {
       }
     }
   }
-  return { solids, hazards, spawn, goal, w: rows[0].length * tile, h: rows.length * tile };
+  return { solids, hazards, rocks, spawn, goal, w: rows[0].length * tile, h: rows.length * tile };
 }
 
 export const level = parseLevel(LEVELS[0], TILE);
