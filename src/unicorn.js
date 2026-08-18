@@ -1,27 +1,42 @@
 // Procedurally-animated unicorn. No sprites: the body is minimal geometry
 // (ellipses + paths), the tail and mane are Verlet chains that trail with
 // momentum, and the four legs are driven by two-bone IK against foot targets
-// from a distance-based gait so they plant without sliding. Everything keys off
-// the player physics body (position, velocity, facing, grounded, element).
+// from a distance-based gait so they plant without sliding.
+//
+// At speed it shifts into a proper GALLOP: the body see-saws (vertical bounce +
+// fore/aft pitch), the spine squashes & stretches, the four legs fire in a
+// 4-beat rhythm with a high swing arc, and the tail/mane stiffen out
+// horizontally. Everything keys off the player body (position, velocity, facing,
+// grounded, element) and eases back to a calm idle as speed drops to zero.
 import { COLORS } from './palette.js';
 import { makeChain, updateChain } from './chain.js';
 import { solve2 } from './ik.js';
 
-const AMP = 6;      // half-stride, in local px
-const LIFT = 5;     // how high a swinging hoof rises
+const TAU = Math.PI * 2;
+const AMP = 7;      // half-stride reach, local px
+const LIFT = 9;     // swing-arc height (raised ~1.8x for a bold gallop step)
+const DUTY = 0.4;   // fraction of a leg's cycle spent planted (stance)
 const STRIDE = 22;  // world px travelled per full gait cycle
 const L1 = 4.5, L2 = 5.5; // thigh / shin bone lengths
 
+// Gallop body dynamics (scaled by how fast we're running).
+const BOUNCE = 3.5; // vertical see-saw amplitude, px
+const PITCH = 0.16; // fore/aft pitch amplitude, radians
+const SQUASH = 0.12; // spine squash & stretch fraction
+
 // Per-leg config: hip offset (facing space), neutral foot offset, gait phase,
-// IK bend side, and whether it's a far (background) leg.
+// IK bend side, far/near (depth). Phases form a 4-beat gallop: the hind pair
+// lands first (0.0, 0.1), then the fore pair (0.4, 0.5).
 const LEGS = [
-  { hipDX: 6, baseFX: 2, phase: 0.5, bend: -1, far: true },   // front far
-  { hipDX: -7, baseFX: -2, phase: 0.0, bend: 1, far: true },  // rear far
-  { hipDX: 6, baseFX: 3, phase: 0.0, bend: -1, far: false },  // front near
-  { hipDX: -7, baseFX: -3, phase: 0.5, bend: 1, far: false }, // rear near
+  { hipDX: -7, baseFX: -2, phase: 0.1, bend: 1, far: true },  // hind far
+  { hipDX: 6, baseFX: 2, phase: 0.5, bend: -1, far: true },   // fore far
+  { hipDX: -7, baseFX: -3, phase: 0.0, bend: 1, far: false },  // hind near
+  { hipDX: 6, baseFX: 3, phase: 0.4, bend: -1, far: false },   // fore near
 ];
 
 let tail, mane, gait, legState, knee = { x: 0, y: 0 };
+// Body-transform state, refreshed each update and reused by the renderer.
+let gBounce = 0, gPitch = 0, gSx = 1, gSy = 1;
 
 export function initUnicorn(p) {
   const cx = p.x + p.w / 2, by = p.y + 6;
@@ -29,7 +44,15 @@ export function initUnicorn(p) {
   // Mane is a short, stiff tuft that rides the neck crest (not a second tail).
   mane = makeChain(4, 2.2, cx, by);
   gait = 0;
-  legState = LEGS.map((l) => ({ fx: cx, fy: p.y + p.h }));
+  legState = LEGS.map(() => ({ fx: cx, fy: p.y + p.h }));
+}
+
+// Transform a body-local point (relative to barrel centre) through the current
+// squash/pitch so hips, strand anchors, and body art all share one motion.
+function bodyPoint(lx, ly, cx, cy) {
+  const x = lx * gSx, y = ly * gSy;
+  const c = Math.cos(gPitch), s = Math.sin(gPitch);
+  return { x: cx + x * c - y * s, y: cy + x * s + y * c };
 }
 
 export function updateUnicorn(p, dt) {
@@ -39,19 +62,30 @@ export function updateUnicorn(p, dt) {
 
   // Advance the gait by distance travelled so hooves never skate.
   gait += (p.vx * dt) / STRIDE;
+  const run = Math.min(1, Math.abs(p.vx) / 120); // 0..1 gallop intensity
   const moveAmt = Math.min(1, Math.abs(p.vx) / 60);
+  const ph = gait * TAU;
 
+  // --- Body see-saw: bounce + pitch + squash/stretch (grounded gallop) ------
+  const active = p.grounded ? run : 0;
+  gBounce = Math.sin(ph) * BOUNCE * active;              // up/down once per stride
+  gPitch = Math.sin(ph - 1.2) * PITCH * active * f;      // shoulder/pelvis see-saw
+  gSx = 1 + Math.cos(ph) * SQUASH * active;              // stretch long when reaching
+  gSy = 1 - Math.cos(ph) * SQUASH * 0.6 * active;        // ...and squash the height
+  const bcy = by + gBounce;
+
+  // --- Legs: 4-beat gait with a high swing arc -----------------------------
   for (let i = 0; i < LEGS.length; i++) {
     const l = LEGS[i], s = legState[i];
     const hipX = cx + f * l.hipDX;
     let tx, ty;
     if (p.grounded) {
-      let ph = (gait + l.phase) % 1; if (ph < 0) ph += 1;
+      let lp = (gait + l.phase) % 1; if (lp < 0) lp += 1;
       let localX, lift = 0;
-      if (ph < 0.5) {                    // stance: plant, drift backward
-        localX = (0.5 - ph) * 2 * AMP;
-      } else {                           // swing: lift and reach forward
-        const t = (ph - 0.5) * 2;
+      if (lp < DUTY) {                    // stance: planted, drifting backward
+        localX = (0.5 - lp / DUTY) * 2 * AMP;
+      } else {                            // swing: lift high and reach forward
+        const t = (lp - DUTY) / (1 - DUTY);
         localX = (2 * t - 1) * AMP;
         lift = LIFT * Math.sin(Math.PI * t);
       }
@@ -61,26 +95,25 @@ export function updateUnicorn(p, dt) {
       tx = hipX + f * (l.baseFX * 0.5 + 2);
       ty = hipY + 7;
     }
-    // Smooth the foot toward its target (eases the airborne transition).
     s.fx += (tx - s.fx) * 0.4;
     s.fy += (ty - s.fy) * 0.4;
   }
 
-  // Tail & mane: a directional rest bias plus the body's velocity so the
-  // strands lag and whip during motion.
+  // --- Tail & mane: stiffen out horizontally the faster we go ---------------
   const dragX = -p.vx * dt * 0.5, dragY = -p.vy * dt * 0.25;
-  // Tail off the rump, streaming back and down.
-  updateChain(tail, cx - f * 10, by - 3, 0.9, -f * 0.35 + dragX, 0.18 + dragY);
-  // Mane off the poll: mostly droops onto the neck crest with only a light
-  // backward lean and half the whip, so it reads as a mane, not a tail.
-  updateChain(mane, cx + f * 12, by - 8, 0.8, -f * 0.16 + dragX * 0.35, 0.28 + dragY * 0.7);
+  const tDamp = 0.9 + 0.07 * run;          // more inertia at speed
+  const tGravY = 0.18 * (1 - 0.85 * run);  // gravity fades as it streams flat
+  const tBiasX = -f * (0.35 + 0.45 * run); // stronger backward pull at speed
+  const ta = bodyPoint(-f * 10, -3, cx, bcy);
+  updateChain(tail, ta.x, ta.y, tDamp, tBiasX + dragX, tGravY + dragY);
+  const ma = bodyPoint(f * 12, -8, cx, bcy);
+  updateChain(mane, ma.x, ma.y, 0.8 + 0.05 * run, -f * (0.16 + 0.2 * run) + dragX * 0.35, 0.28 * (1 - 0.7 * run) + dragY * 0.7);
 }
 
 function strand(ctx, chain, width) {
   const p = chain.pts, n = p.length;
   ctx.lineCap = 'round';
   for (let i = 1; i < n; i++) {
-    // Rainbow from root (red) to tip (violet).
     ctx.strokeStyle = COLORS[Math.min(6, Math.floor((i - 1) / (n - 1) * 7))];
     ctx.lineWidth = width * (1 - (i / n) * 0.6);
     ctx.beginPath();
@@ -104,7 +137,8 @@ function leg(ctx, hipX, hipY, s, bend, color) {
 
 export function drawUnicorn(ctx, p, ix, iy) {
   const f = p.face;
-  const cx = p.x + p.w / 2, by = p.y + 6, hipY = by + 3;
+  const cx = p.x + p.w / 2, by = p.y + 6;
+  const bcy = by + gBounce;
   const body = COLORS[p.el];
   const dark = '#0e0e12';
 
@@ -114,43 +148,47 @@ export function drawUnicorn(ctx, p, ix, iy) {
   // Tail behind everything.
   strand(ctx, tail, 3);
 
-  // Far legs (darker, drawn behind the barrel).
-  for (let i = 0; i < LEGS.length; i++)
-    if (LEGS[i].far) leg(ctx, cx + f * LEGS[i].hipDX, hipY, legState[i], LEGS[i].bend, '#3a3a44');
+  // Hips ride the body transform so IK legs stretch/compress with the gallop.
+  const hip = (i) => bodyPoint(f * LEGS[i].hipDX, 3, cx, bcy);
 
-  // Barrel.
+  // Far legs (darker, behind the barrel).
+  for (let i = 0; i < LEGS.length; i++)
+    if (LEGS[i].far) { const h = hip(i); leg(ctx, h.x, h.y, legState[i], LEGS[i].bend, '#3a3a44'); }
+
+  // Barrel (its own transformed group).
+  ctx.save();
+  ctx.translate(cx, bcy); ctx.rotate(gPitch); ctx.scale(gSx, gSy);
   ctx.fillStyle = body;
   ctx.beginPath();
-  ctx.ellipse(cx, by, 11, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 11, 6, 0, 0, TAU);
   ctx.fill();
+  ctx.restore();
 
-  // Near legs.
+  // Near legs (in front of the barrel).
   for (let i = 0; i < LEGS.length; i++)
-    if (!LEGS[i].far) leg(ctx, cx + f * LEGS[i].hipDX, hipY, legState[i], LEGS[i].bend, body);
+    if (!LEGS[i].far) { const h = hip(i); leg(ctx, h.x, h.y, legState[i], LEGS[i].bend, body); }
 
-  // Neck (shoulder -> head base).
+  // Neck + head + horn, sharing the same body transform (local coords).
+  ctx.save();
+  ctx.translate(cx, bcy); ctx.rotate(gPitch); ctx.scale(gSx, gSy);
   ctx.fillStyle = body;
+  // Neck (shoulder -> head base).
   ctx.beginPath();
-  ctx.moveTo(cx + f * 6, by - 3);
-  ctx.lineTo(cx + f * 11, by - 6);
-  ctx.lineTo(cx + f * 15, p.y - 1);
-  ctx.lineTo(cx + f * 12, p.y + 1);
-  ctx.lineTo(cx + f * 6, by + 1);
+  ctx.moveTo(f * 6, -3);
+  ctx.lineTo(f * 11, -6);
+  ctx.lineTo(f * 15, -7);
+  ctx.lineTo(f * 12, -5);
+  ctx.lineTo(f * 6, 1);
   ctx.closePath();
   ctx.fill();
-
-  // Mane down the neck.
-  strand(ctx, mane, 3.8);
-
   // Head.
-  const hx = cx + f * 14, hy = p.y - 2;
-  ctx.fillStyle = body;
+  const hx = f * 14, hy = -8;
   ctx.beginPath();
-  ctx.ellipse(hx, hy, 4.5, 3.2, f * 0.3, 0, Math.PI * 2);
+  ctx.ellipse(hx, hy, 4.5, 3.2, f * 0.3, 0, TAU);
   ctx.fill();
   // Muzzle.
   ctx.beginPath();
-  ctx.ellipse(hx + f * 3.5, hy + 1.5, 2.2, 1.8, 0, 0, Math.PI * 2);
+  ctx.ellipse(hx + f * 3.5, hy + 1.5, 2.2, 1.8, 0, 0, TAU);
   ctx.fill();
   // Ear.
   ctx.beginPath();
@@ -159,7 +197,6 @@ export function drawUnicorn(ctx, p, ix, iy) {
   ctx.lineTo(hx + f * 1, hy - 3);
   ctx.closePath();
   ctx.fill();
-
   // Horn — the last horn.
   ctx.fillStyle = '#f2f2f2';
   ctx.beginPath();
@@ -168,12 +205,15 @@ export function drawUnicorn(ctx, p, ix, iy) {
   ctx.lineTo(hx + f * 4, hy - 2.5);
   ctx.closePath();
   ctx.fill();
-
   // Eye.
   ctx.fillStyle = dark;
   ctx.beginPath();
-  ctx.arc(hx + f * 1.5, hy - 0.3, 0.9, 0, Math.PI * 2);
+  ctx.arc(hx + f * 1.5, hy - 0.3, 0.9, 0, TAU);
   ctx.fill();
+  ctx.restore();
+
+  // Mane rides the neck crest, drawn last so it sits on top.
+  strand(ctx, mane, 3.8);
 
   ctx.restore();
 }
