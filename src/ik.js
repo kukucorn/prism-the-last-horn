@@ -23,3 +23,41 @@ export function solve2(hipX, hipY, footX, footY, l1, l2, bend, out) {
   out.y = baseY + ux * h * bend;
   return out;
 }
+
+// FABRIK for a multi-link leg (>2 segments): a horse leg is really 3 bones
+// (upper / mid / cannon) and fore vs hind legs fold in different directions.
+// `pts` (length n) must be pre-seeded — typically a straight line from the root
+// toward the foot, nudged sideways so the chain folds the anatomically correct
+// way — then this iterates it onto the foot target. Root stays pinned.
+export function fabrik(pts, lens, rx, ry, tx, ty) {
+  const n = pts.length;
+  let total = 0;
+  for (const l of lens) total += l;
+  const dx = tx - rx, dy = ty - ry, d = Math.hypot(dx, dy) || 1e-4;
+  if (d >= total) {
+    // Out of reach: lay the chain straight toward the target.
+    const ux = dx / d, uy = dy / d;
+    pts[0].x = rx; pts[0].y = ry;
+    for (let i = 1; i < n; i++) {
+      pts[i].x = pts[i - 1].x + ux * lens[i - 1];
+      pts[i].y = pts[i - 1].y + uy * lens[i - 1];
+    }
+    return;
+  }
+  for (let it = 0; it < 4; it++) {
+    // Backward reach: pin the tip to the target, pull each joint inward.
+    pts[n - 1].x = tx; pts[n - 1].y = ty;
+    for (let i = n - 2; i >= 0; i--) {
+      let vx = pts[i].x - pts[i + 1].x, vy = pts[i].y - pts[i + 1].y;
+      const s = lens[i] / (Math.hypot(vx, vy) || 1e-4);
+      pts[i].x = pts[i + 1].x + vx * s; pts[i].y = pts[i + 1].y + vy * s;
+    }
+    // Forward reach: pin the root, push each joint outward.
+    pts[0].x = rx; pts[0].y = ry;
+    for (let i = 1; i < n; i++) {
+      let vx = pts[i].x - pts[i - 1].x, vy = pts[i].y - pts[i - 1].y;
+      const s = lens[i - 1] / (Math.hypot(vx, vy) || 1e-4);
+      pts[i].x = pts[i - 1].x + vx * s; pts[i].y = pts[i - 1].y + vy * s;
+    }
+  }
+}
