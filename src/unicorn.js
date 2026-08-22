@@ -149,19 +149,37 @@ function drawLeg(ctx, rootX, rootY, s, l, f, color) {
   ctx.fill();
 }
 
-// Body art in the shared (translate/rotate/scale) local frame.
+// Overlay a top-lit vertical gradient onto the CURRENT path (already filled in
+// the body colour): white highlight up top, transparent middle, dark shadow
+// below. Colour-agnostic, so it shades any element hue and gives round volume.
+function vshade(ctx, top, bot, hi, lo) {
+  const g = ctx.createLinearGradient(0, top, 0, bot);
+  g.addColorStop(0, 'rgba(255,255,255,' + hi + ')');
+  g.addColorStop(0.5, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(0,0,0,' + lo + ')');
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = g;
+  ctx.fillRect(-22, top, 44, bot - top);
+  ctx.restore();
+}
+
+// Body art in the shared (translate/rotate/scale) local frame. One smooth
+// horse torso: chest -> withers -> back -> croup -> rump -> belly, curved.
 function drawBody(ctx, f, body) {
-  ctx.fillStyle = body;
-  // Barrel + deep chest + haunch, in one blobby silhouette.
   ctx.beginPath();
-  ctx.ellipse(0, 0, 12.5, 6.2, 0, 0, TAU);
+  ctx.moveTo(f * 12, -2);
+  ctx.quadraticCurveTo(f * 10, -6, f * 6, -6);        // over the withers
+  ctx.quadraticCurveTo(0, -7.5, -f * 4, -6.5);        // along the back
+  ctx.quadraticCurveTo(-f * 10, -5.5, -f * 12, -1);   // over the croup
+  ctx.quadraticCurveTo(-f * 14.5, 3, -f * 11, 6.5);   // down the rump
+  ctx.quadraticCurveTo(-f * 6, 8.5, -f * 1, 7.5);     // along the belly (tuck)
+  ctx.quadraticCurveTo(f * 6, 7, f * 10, 5);          // brisket
+  ctx.quadraticCurveTo(f * 14.5, 2, f * 12, -2);      // up the chest
+  ctx.closePath();
+  ctx.fillStyle = body;
   ctx.fill();
-  ctx.beginPath(); // haunch (rear muscle)
-  ctx.ellipse(-f * 8, -0.5, 5.5, 5.5, 0, 0, TAU);
-  ctx.fill();
-  ctx.beginPath(); // chest/shoulder
-  ctx.ellipse(f * 8, 1, 4.5, 5, 0, 0, TAU);
-  ctx.fill();
+  vshade(ctx, -8, 8, 0.22, 0.34);
 }
 
 // Neck + head + horn, nodding by `nod`. Local frame.
@@ -177,8 +195,10 @@ function drawHead(ctx, f, body, nod) {
   ctx.lineTo(f * 6, 0);
   ctx.closePath();
   ctx.fill();
+  vshade(ctx, -14 + nod, 1, 0.2, 0.26);
   // Head: a long, slightly dished face tapering to a rounded muzzle.
   const hx = f * 15, hy = -12 + nod;
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(hx - f * 1.5, hy - 2.5);   // poll / forehead
   ctx.lineTo(hx + f * 5, hy - 0.5);     // nose bridge
@@ -189,6 +209,7 @@ function drawHead(ctx, f, body, nod) {
   ctx.lineTo(hx - f * 1.5, hy + 1.5);   // cheek -> throat
   ctx.closePath();
   ctx.fill();
+  vshade(ctx, hy - 3, hy + 5, 0.18, 0.22);
   // Ear.
   ctx.beginPath();
   ctx.moveTo(hx - f * 1, hy - 1);
@@ -226,6 +247,12 @@ export function drawUnicorn(ctx, p, ix, iy) {
     ctx.translate(0, 2 * cyc);
     ctx.scale(1, -1);
   }
+
+  // Soft contact shadow under the hooves, grounding the unicorn.
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(cx, p.y + p.h, 12, 2.2, 0, 0, TAU);
+  ctx.fill();
 
   strand(ctx, tail, 3);
 
