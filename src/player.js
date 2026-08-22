@@ -3,7 +3,7 @@
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
-import { RED, ORANGE, YELLOW, GREEN } from './palette.js';
+import { RED, ORANGE, YELLOW, GREEN, BLUE } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -39,6 +39,11 @@ const LIGHT_CD = 40;       // cooldown
 const GLIDE_FALL = 120;    // capped fall speed while gliding
 const DJ_DUR = 12;         // frames the double-jump ring animates
 
+// Water (Blue) buoyant float.
+const FLOAT_GRAV = 0.2;    // fraction of gravity that still applies
+const FLOAT_LIFT = 560;    // upward buoyancy accel, px/s^2 (net ~ -280 = rises)
+const FLOAT_RISE = 140;    // capped upward drift speed
+
 export function makePlayer(x, y) {
   return {
     x, y, w: 12, h: 16,
@@ -60,6 +65,7 @@ export function makePlayer(x, y) {
     doubleUsed: false, // Nature double jump spent this airtime
     gliding: false, // currently gliding
     djT: 0,         // double-jump ring animation frames
+    floating: false, // Water buoyant float active
   };
 }
 
@@ -165,7 +171,15 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   }
 
   // --- Gravity -------------------------------------------------------------
-  p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
+  // Water buoyancy: holding the skill in the air swaps full gravity for a weak
+  // one plus an upward lift, so the unicorn drifts up under low gravity.
+  p.floating = p.el === BLUE && input.down(SKILL) && !p.grounded;
+  if (p.floating) {
+    p.vy += (GRAVITY * FLOAT_GRAV - FLOAT_LIFT) * dt;
+    p.vy = Math.max(-FLOAT_RISE, Math.min(MAX_FALL, p.vy));
+  } else {
+    p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
+  }
 
   // Nature glide: holding the skill while falling caps the descent speed.
   p.gliding = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy > 0;

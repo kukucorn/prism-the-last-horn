@@ -173,6 +173,21 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
+  // Water float: rising blue bubbles around the drifting unicorn.
+  if (player.floating) {
+    ctx.fillStyle = COLORS[4];
+    const t = performance.now() / 300;
+    for (let i = 0; i < 4; i++) {
+      const bx = x + player.w / 2 + Math.sin(t * 2 + i * 2) * (5 + i * 2);
+      const by = y + player.h - ((t * 22 + i * 9) % 26);
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(bx, by, 1.6 - i * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Earth slam: expanding orange shockwave ring at the impact point.
   if (player.shockT > 0) {
     const t = 1 - player.shockT / 16; // 0 -> 1 as it expands
