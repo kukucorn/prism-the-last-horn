@@ -17,8 +17,8 @@ const STRIDE = 22;  // world px per full gait cycle
 // Gallop body dynamics (scaled by running speed).
 const BOUNCE = 3.5, PITCH = 0.16, SQUASH = 0.12, NOD = 2.6;
 
-const FORE_LEN = [4.5, 4.5, 4]; // shoulder->elbow->knee->hoof
-const HIND_LEN = [5, 4.5, 4];   // hip->stifle->hock->hoof
+const FORE_LEN = [5, 5, 4.2];   // shoulder->elbow->knee->hoof (longer, leggier)
+const HIND_LEN = [5.4, 5, 4.2]; // hip->stifle->hock->hoof
 
 // Per-leg: hip offset (facing space), neutral foot x, gait phase, fold side
 // (+1 forward / -1 back), zig (hind Z-fold vs fore C-fold), far/near depth.
@@ -34,9 +34,9 @@ let tail, mane, gait, legState;
 let gBounce = 0, gPitch = 0, gSx = 1, gSy = 1, gNod = 0;
 
 export function initUnicorn(p) {
-  const cx = p.x + p.w / 2, by = p.y + 5;
+  const cx = p.x + p.w / 2, by = p.y + 2;
   tail = makeChain(7, 3, cx, by);
-  mane = makeChain(5, 2.4, cx, by);
+  mane = makeChain(4, 2.1, cx, by);
   gait = 0;
   legState = LEGS.map(() => ({
     fx: cx, fy: p.y + p.h,
@@ -54,7 +54,7 @@ function bodyPoint(lx, ly, cx, cy) {
 
 export function updateUnicorn(p, dt) {
   const f = p.face;
-  const cx = p.x + p.w / 2, by = p.y + 5;
+  const cx = p.x + p.w / 2, by = p.y + 2;
   const feetY = p.y + p.h, bellyY = by + 4;
 
   gait += (p.vx * dt) / STRIDE;
@@ -102,8 +102,10 @@ export function updateUnicorn(p, dt) {
   const tBiasX = -f * (0.35 + 0.45 * run);
   const ta = bodyPoint(-f * 11, -4, cx, bcy);
   updateChain(tail, ta.x, ta.y, tDamp, tBiasX + dragX, tGravY + dragY);
-  const ma = bodyPoint(f * 10, -11, cx, bcy);
-  updateChain(mane, ma.x, ma.y, 0.8 + 0.05 * run, -f * (0.16 + 0.2 * run) + dragX * 0.35, 0.28 * (1 - 0.7 * run) + dragY * 0.7);
+  // Mane anchored on the upper neck, draping back-and-down along the crest
+  // toward the withers so the tip lies on the neck (not dangling or sticking out).
+  const ma = bodyPoint(f * 9, -10, cx, bcy);
+  updateChain(mane, ma.x, ma.y, 0.82 + 0.05 * run, -f * (0.24 + 0.28 * run) + dragX * 0.35, 0.24 * (1 - 0.6 * run) + dragY * 0.6);
 }
 
 function strand(ctx, chain, width) {
@@ -133,7 +135,7 @@ function drawLeg(ctx, rootX, rootY, s, l, f, color) {
   fabrik(pts, l.len, rootX, rootY, tx, ty);
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
-  const w = [2.5, 1.9, 1.3];
+  const w = [2.7, 1.6, 0.9]; // muscular upper leg tapering to a thin cannon
   for (let i = 0; i < 3; i++) {
     ctx.lineWidth = w[i];
     ctx.beginPath();
@@ -211,7 +213,7 @@ function drawHead(ctx, f, body, nod) {
 
 export function drawUnicorn(ctx, p, ix, iy) {
   const f = p.face;
-  const cx = p.x + p.w / 2, by = p.y + 5;
+  const cx = p.x + p.w / 2, by = p.y + 2;
   const bcy = by + gBounce;
   const body = COLORS[p.el];
 
@@ -248,7 +250,7 @@ export function drawUnicorn(ctx, p, ix, iy) {
   drawHead(ctx, f, body, gNod);
   ctx.restore();
 
-  strand(ctx, mane, 3.4);
+  strand(ctx, mane, 3.2);
 
   ctx.restore();
 }
