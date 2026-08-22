@@ -3,7 +3,7 @@
 // Logical WIDTH x HEIGHT space, letterboxed to the window. Simulation runs at a
 // fixed 1/60s step (accumulator) so movement is deterministic; rendering
 // interpolates between the previous and current body position for smoothness.
-import { COLORS, NAMES } from './palette.js';
+import { COLORS, NAMES, INDIGO } from './palette.js';
 import { makePlayer, updatePlayer } from './player.js';
 import { level } from './level.js';
 import { overlap } from './physics.js';
@@ -14,6 +14,7 @@ const { solids, hazards, rocks, goal, spawn } = level;
 const WIDTH = 480, HEIGHT = 270;
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
+const FREEZE_DUR = 120; // frames an Ice-frozen trap stays inert
 
 const canvas = document.getElementById('g');
 const ctx = canvas.getContext('2d');
@@ -54,8 +55,17 @@ function update() {
   prevY = player.y;
   updatePlayer(player, STEP, solids, hazards, rocks);
 
-  // Death: fell out of the level, or touched a spike while not invincible.
-  if (player.y > HEIGHT + 40 || (!player.inv && hazards.some((h) => overlap(player, h)))) respawn();
+  // Hazards: frozen spikes are inert (thawing); Ice freezes any it touches for
+  // FREEZE_DUR; otherwise contact is lethal unless invincible.
+  let died = player.y > HEIGHT + 40;
+  for (const h of hazards) {
+    if (h.frozen > 0) { h.frozen--; continue; }
+    if (!died && overlap(player, h)) {
+      if (player.el === INDIGO) h.frozen = FREEZE_DUR;
+      else if (!player.inv) died = true;
+    }
+  }
+  if (died) respawn();
 
   updateUnicorn(player, STEP);
 }
@@ -97,9 +107,9 @@ function render(alpha) {
     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
   }
 
-  // Spikes — upward triangles.
-  ctx.fillStyle = '#c33';
+  // Spikes — upward triangles. Frozen ones turn icy blue and inert.
   for (const h of hazards) {
+    ctx.fillStyle = h.frozen > 0 ? '#9fdcff' : '#c33';
     ctx.beginPath();
     ctx.moveTo(h.x, h.y + h.h);
     ctx.lineTo(h.x + h.w / 2, h.y);

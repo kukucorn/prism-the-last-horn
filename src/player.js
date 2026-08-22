@@ -3,7 +3,7 @@
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
-import { RED, ORANGE, YELLOW, GREEN, BLUE } from './palette.js';
+import { RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -166,7 +166,9 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
     const a = (p.grounded ? GND_ACCEL : AIR_ACCEL) * dt;
     p.vx += Math.max(-a, Math.min(a, target - p.vx));
   } else {
-    const f = (p.grounded ? GND_FRICTION : AIR_FRICTION) * dt;
+    // Ice: zero ground friction, so the unicorn keeps its momentum and slides.
+    const base = p.el === INDIGO && p.grounded ? 0 : (p.grounded ? GND_FRICTION : AIR_FRICTION);
+    const f = base * dt;
     p.vx = p.vx > 0 ? Math.max(0, p.vx - f) : Math.min(0, p.vx + f);
   }
 
