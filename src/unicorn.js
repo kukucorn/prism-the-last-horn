@@ -145,6 +145,15 @@ export function drawUnicorn(ctx, p, ix, iy) {
   ctx.save();
   ctx.translate(ix - p.x, iy - p.y); // apply render interpolation to the whole rig
 
+  // Gravity flip: mirror the whole rig vertically about the body's centre so it
+  // stands on the ceiling. The gait/IK still compute in a gravity-down frame;
+  // this transform presents them the right way up.
+  if (p.gflip < 0) {
+    const cyc = p.y + p.h / 2;
+    ctx.translate(0, 2 * cyc);
+    ctx.scale(1, -1);
+  }
+
   // Tail behind everything.
   strand(ctx, tail, 3);
 

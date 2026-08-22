@@ -43,6 +43,7 @@ let prevX = player.x, prevY = player.y;
 function respawn() {
   player.x = spawn.x - 6; player.y = spawn.y - 16;
   player.vx = player.vy = 0;
+  player.gflip = 1; // gravity returns to normal on respawn
   prevX = player.x; prevY = player.y;
 }
 
@@ -195,6 +196,19 @@ function render(alpha) {
       ctx.arc(bx, by, 1.6 - i * 0.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
+  }
+
+  // Gravity flip: a violet vertical pulse through the unicorn.
+  if (player.flipT > 0) {
+    const t = player.flipT / 12;
+    ctx.strokeStyle = COLORS[6];
+    ctx.globalAlpha = t * 0.8;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + player.w / 2, y - 10 * (1 - t));
+    ctx.lineTo(x + player.w / 2, y + player.h + 10 * (1 - t));
+    ctx.stroke();
     ctx.globalAlpha = 1;
   }
 

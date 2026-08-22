@@ -3,7 +3,7 @@
 // the spec calls out "coyote time (6 frames)".
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
-import { RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO } from './palette.js';
+import { RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO, VIOLET } from './palette.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -44,6 +44,9 @@ const FLOAT_GRAV = 0.2;    // fraction of gravity that still applies
 const FLOAT_LIFT = 560;    // upward buoyancy accel, px/s^2 (net ~ -280 = rises)
 const FLOAT_RISE = 140;    // capped upward drift speed
 
+// Gravity (Violet) flip.
+const GRAV_CD = 10;        // cooldown so you can't strobe the flip
+
 export function makePlayer(x, y) {
   return {
     x, y, w: 12, h: 16,
@@ -66,6 +69,8 @@ export function makePlayer(x, y) {
     gliding: false, // currently gliding
     djT: 0,         // double-jump ring animation frames
     floating: false, // Water buoyant float active
+    gflip: 1,       // gravity direction: +1 down, -1 up (Violet flips it)
+    flipT: 0,       // gravity-flip flash frames
   };
 }
 
@@ -84,11 +89,15 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   if (p.shockT > 0) p.shockT--;
   if (p.blinkT > 0) p.blinkT--;
   if (p.djT > 0) p.djT--;
+  if (p.flipT > 0) p.flipT--;
 
   // --- Skill activation ----------------------------------------------------
   if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0 && !p.slam) {
     p.glow = 12;
     if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; }   // Fire dash
+    else if (p.el === VIOLET) {                                   // Gravity flip
+      p.gflip = -p.gflip; p.vy = 0; p.grounded = false; p.cd = GRAV_CD; p.flipT = 12;
+    }
     else if (p.el === ORANGE && !p.grounded) p.slam = true;       // Earth slam (air only)
     else if (p.el === GREEN && !p.grounded && !p.doubleUsed) {    // Nature double jump
       p.vy = -JUMP_VEL; p.doubleUsed = true; p.djT = DJ_DUR;
@@ -126,14 +135,14 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   // --- Earth slam (overrides normal movement while active) -----------------
   if (p.slam) {
     p.vx = 0;
-    p.vy = SLAM_SPEED;
-    // Smash any rocks we plow through on the way down.
+    p.vy = SLAM_SPEED * p.gflip; // slam toward gravity
+    // Smash any rocks we plow through on the way.
     if (rocks) for (let i = rocks.length - 1; i >= 0; i--)
       if (overlap(p, rocks[i])) rocks.splice(i, 1);
     const vhit = moveY(p, p.vy * dt, solids); // stop only on permanent ground
-    if (vhit > 0) {
+    if (vhit === p.gflip) { // landed on a surface in the gravity direction
       // Impact shockwave: shatter every rock within radius of the feet.
-      const cx = p.x + p.w / 2, cy = p.y + p.h;
+      const cx = p.x + p.w / 2, cy = p.gflip > 0 ? p.y + p.h : p.y;
       if (rocks) for (let i = rocks.length - 1; i >= 0; i--) {
         const r = rocks[i];
         if (Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy) <= SHOCK_R) rocks.splice(i, 1);
@@ -150,13 +159,13 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   p.coyote = p.grounded ? COYOTE : Math.max(0, p.coyote - 1);
 
   if (p.buffer > 0 && p.coyote > 0) {
-    p.vy = -JUMP_VEL;
+    p.vy = -JUMP_VEL * p.gflip; // launch opposite gravity
     p.buffer = 0;
     p.coyote = 0;
     p.grounded = false;
   }
-  // Variable height: releasing while still rising cuts the ascent.
-  if (input.released(JUMP) && p.vy < 0) p.vy *= JUMP_CUT;
+  // Variable height: releasing while still rising (moving against gravity) cuts it.
+  if (input.released(JUMP) && p.vy * p.gflip < 0) p.vy *= JUMP_CUT;
 
   // --- Horizontal ----------------------------------------------------------
   const ax = input.axis();
@@ -172,25 +181,29 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
     p.vx = p.vx > 0 ? Math.max(0, p.vx - f) : Math.min(0, p.vx + f);
   }
 
-  // --- Gravity -------------------------------------------------------------
+  // --- Gravity (direction = p.gflip) ---------------------------------------
+  const g = p.gflip;
   // Water buoyancy: holding the skill in the air swaps full gravity for a weak
-  // one plus an upward lift, so the unicorn drifts up under low gravity.
+  // one plus a lift opposite gravity, so the unicorn drifts away from the floor.
   p.floating = p.el === BLUE && input.down(SKILL) && !p.grounded;
   if (p.floating) {
-    p.vy += (GRAVITY * FLOAT_GRAV - FLOAT_LIFT) * dt;
-    p.vy = Math.max(-FLOAT_RISE, Math.min(MAX_FALL, p.vy));
+    p.vy += (GRAVITY * FLOAT_GRAV - FLOAT_LIFT) * g * dt;
+    // Cap the drift speed opposite gravity; full fall speed toward it.
+    p.vy = g > 0 ? Math.max(-FLOAT_RISE, Math.min(MAX_FALL, p.vy))
+                 : Math.min(FLOAT_RISE, Math.max(-MAX_FALL, p.vy));
   } else {
-    p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
+    p.vy += GRAVITY * g * dt;
+    p.vy = Math.max(-MAX_FALL, Math.min(MAX_FALL, p.vy));
   }
 
-  // Nature glide: holding the skill while falling caps the descent speed.
-  p.gliding = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy > 0;
-  if (p.gliding) p.vy = Math.min(p.vy, GLIDE_FALL);
+  // Nature glide: holding the skill while falling (with gravity) caps the descent.
+  p.gliding = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy * g > 0;
+  if (p.gliding) p.vy = g > 0 ? Math.min(p.vy, GLIDE_FALL) : Math.max(p.vy, -GLIDE_FALL);
 
   // --- Integrate + collide (X then Y) --------------------------------------
   if (moveX(p, p.vx * dt, world)) p.vx = 0;
   const vhit = moveY(p, p.vy * dt, world);
-  p.grounded = vhit > 0;
+  p.grounded = vhit === g; // grounded only when we hit a surface in the gravity direction
   if (vhit !== 0) p.vy = 0; // floor or ceiling stops vertical motion
   if (p.grounded) p.doubleUsed = false; // recharge the double jump on landing
 
