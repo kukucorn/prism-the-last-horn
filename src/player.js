@@ -4,6 +4,7 @@
 import { input, JUMP, SKILL, SWAP } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
 import { RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO, VIOLET } from './palette.js';
+import { snd, S_JUMP, S_LAND, S_DASH, S_SLAM, S_BLINK, S_SWAP, S_DJUMP, S_GRAV } from './sfx.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -83,6 +84,7 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   if (input.pressed(SWAP) && p.swapLock === 0) {
     p.el = (p.el + 1) % 7;
     p.swapLock = SWAP_DELAY;
+    snd(S_SWAP);
   }
   if (p.glow > 0) p.glow--;
   if (p.cd > 0) p.cd--;
@@ -94,13 +96,14 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   // --- Skill activation ----------------------------------------------------
   if (input.pressed(SKILL) && p.cd === 0 && p.dashT === 0 && !p.slam) {
     p.glow = 12;
-    if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; }   // Fire dash
+    if (p.el === RED) { p.dashT = DASH_DUR; p.inv = DASH_DUR; snd(S_DASH); } // Fire dash
     else if (p.el === VIOLET) {                                   // Gravity flip
       p.gflip = -p.gflip; p.vy = 0; p.grounded = false; p.cd = GRAV_CD; p.flipT = 12;
+      snd(S_GRAV);
     }
-    else if (p.el === ORANGE && !p.grounded) p.slam = true;       // Earth slam (air only)
+    else if (p.el === ORANGE && !p.grounded) { p.slam = true; snd(S_DASH); } // Earth slam (air only)
     else if (p.el === GREEN && !p.grounded && !p.doubleUsed) {    // Nature double jump
-      p.vy = -JUMP_VEL; p.doubleUsed = true; p.djT = DJ_DUR;
+      p.vy = -JUMP_VEL; p.doubleUsed = true; p.djT = DJ_DUR; snd(S_DJUMP);
     }
     else if (p.el === YELLOW) {                                   // Light blink
       // Teleport forward, checking only the endpoint (so thin walls are
@@ -109,7 +112,7 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
         const box = { x: p.x + p.face * d, y: p.y, w: p.w, h: p.h };
         if (!world.some((s) => overlap(box, s))) {
           p.bx0 = p.x; p.by0 = p.y; p.blinkT = BLINK_DUR;
-          p.x = box.x; p.cd = LIGHT_CD;
+          p.x = box.x; p.cd = LIGHT_CD; snd(S_BLINK);
           break;
         }
       }
@@ -148,10 +151,13 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
         if (Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy) <= SHOCK_R) rocks.splice(i, 1);
       }
       p.slam = false; p.vy = 0; p.grounded = true; p.shockT = SHOCK_DUR; p.cd = EARTH_CD;
+      snd(S_SLAM);
     }
     input.clear();
     return;
   }
+
+  const wasGrounded = p.grounded; // for landing-sound edge detection
 
   // --- Jump timers ---------------------------------------------------------
   // Buffer remembers a press; coyote remembers recent ground contact.
@@ -159,6 +165,7 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   p.coyote = p.grounded ? COYOTE : Math.max(0, p.coyote - 1);
 
   if (p.buffer > 0 && p.coyote > 0) {
+    snd(S_JUMP);
     p.vy = -JUMP_VEL * p.gflip; // launch opposite gravity
     p.buffer = 0;
     p.coyote = 0;
@@ -205,7 +212,10 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   const vhit = moveY(p, p.vy * dt, world);
   p.grounded = vhit === g; // grounded only when we hit a surface in the gravity direction
   if (vhit !== 0) p.vy = 0; // floor or ceiling stops vertical motion
-  if (p.grounded) p.doubleUsed = false; // recharge the double jump on landing
+  if (p.grounded) {
+    p.doubleUsed = false; // recharge the double jump on landing
+    if (!wasGrounded) snd(S_LAND);
+  }
 
   input.clear();
 }

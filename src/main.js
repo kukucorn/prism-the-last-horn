@@ -8,6 +8,7 @@ import { makePlayer, updatePlayer } from './player.js';
 import { level } from './level.js';
 import { overlap } from './physics.js';
 import { initUnicorn, updateUnicorn, drawUnicorn } from './unicorn.js';
+import { snd, S_HURT, S_FREEZE } from './sfx.js';
 
 const { solids, hazards, rocks, goal, spawn } = level;
 
@@ -62,11 +63,11 @@ function update() {
   for (const h of hazards) {
     if (h.frozen > 0) { h.frozen--; continue; }
     if (!died && overlap(player, h)) {
-      if (player.el === INDIGO) h.frozen = FREEZE_DUR;
+      if (player.el === INDIGO) { h.frozen = FREEZE_DUR; snd(S_FREEZE); }
       else if (!player.inv) died = true;
     }
   }
-  if (died) respawn();
+  if (died) { snd(S_HURT); respawn(); }
 
   updateUnicorn(player, STEP);
 }
