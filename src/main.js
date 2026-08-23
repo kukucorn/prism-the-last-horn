@@ -86,7 +86,11 @@ function render(alpha) {
   ctx.rect(0, 0, WIDTH, HEIGHT);
   ctx.clip();
 
-  ctx.fillStyle = '#111';
+  // Studio backdrop: a soft radial vignette (lit centre, dark edges).
+  const bg = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.42, 40, WIDTH * 0.5, HEIGHT * 0.5, WIDTH * 0.62);
+  bg.addColorStop(0, '#1c1c22');
+  bg.addColorStop(1, '#0b0b0e');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
   // Solids.

@@ -35,8 +35,8 @@ let gBounce = 0, gPitch = 0, gSx = 1, gSy = 1, gNod = 0;
 
 export function initUnicorn(p) {
   const cx = p.x + p.w / 2, by = p.y + 2;
-  tail = makeChain(7, 3, cx, by);
-  mane = makeChain(4, 2.1, cx, by);
+  tail = makeChain(9, 2.4, cx, by);
+  mane = makeChain(6, 1.9, cx, by);
   gait = 0;
   legState = LEGS.map(() => ({
     fx: cx, fy: p.y + p.h,
@@ -102,22 +102,34 @@ export function updateUnicorn(p, dt) {
   const tBiasX = -f * (0.35 + 0.45 * run);
   const ta = bodyPoint(-f * 11, -4, cx, bcy);
   updateChain(tail, ta.x, ta.y, tDamp, tBiasX + dragX, tGravY + dragY);
-  // Mane anchored on the upper neck, draping back-and-down along the crest
-  // toward the withers so the tip lies on the neck (not dangling or sticking out).
-  const ma = bodyPoint(f * 9, -10, cx, bcy);
-  updateChain(mane, ma.x, ma.y, 0.82 + 0.05 * run, -f * (0.24 + 0.28 * run) + dragX * 0.35, 0.24 * (1 - 0.6 * run) + dragY * 0.6);
+  // Mane anchored near the poll, draping mostly DOWN over the neck (little
+  // backward lean) so it reads as a full mane lying on the neck, not a streamer.
+  const ma = bodyPoint(f * 11, -11, cx, bcy);
+  updateChain(mane, ma.x, ma.y, 0.82 + 0.05 * run, -f * (0.1 + 0.22 * run) + dragX * 0.35, 0.36 * (1 - 0.45 * run) + dragY * 0.6);
 }
 
-function strand(ctx, chain, width) {
+// Silky rainbow strand: rainbow segments, then a white sheen highlight offset
+// along the top edge so the mane/tail catch the studio light like silk.
+function strand(ctx, chain, width, sheen) {
   const p = chain.pts, n = p.length;
   ctx.lineCap = 'round';
   for (let i = 1; i < n; i++) {
     ctx.strokeStyle = COLORS[Math.min(6, Math.floor((i - 1) / (n - 1) * 7))];
-    ctx.lineWidth = width * (1 - (i / n) * 0.6);
+    ctx.lineWidth = width * (1 - (i / n) * 0.5);
     ctx.beginPath();
     ctx.moveTo(p[i - 1].x, p[i - 1].y);
     ctx.lineTo(p[i].x, p[i].y);
     ctx.stroke();
+  }
+  if (sheen) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    for (let i = 1; i < n; i++) {
+      ctx.lineWidth = width * (1 - (i / n) * 0.5) * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(p[i - 1].x, p[i - 1].y - 0.9);
+      ctx.lineTo(p[i].x, p[i].y - 0.9);
+      ctx.stroke();
+    }
   }
 }
 
@@ -143,93 +155,169 @@ function drawLeg(ctx, rootX, rootY, s, l, f, color) {
     ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
     ctx.stroke();
   }
+  // Feathering: a couple of soft fur wisps above the fetlock.
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.6;
+  const kx = pts[2].x, ky = pts[2].y;
+  ctx.beginPath();
+  ctx.moveTo(kx, ky); ctx.lineTo(kx - f * 1.4, ky + 2.4);
+  ctx.moveTo((kx + tx) / 2, (ky + ty) / 2); ctx.lineTo((kx + tx) / 2 - f * 1.2, (ky + ty) / 2 + 2.2);
+  ctx.stroke();
+  // Hoof.
   ctx.fillStyle = '#15151b';
   ctx.beginPath();
   ctx.ellipse(tx, ty, 1.7, 1.2, 0, 0, TAU);
   ctx.fill();
 }
 
-// Overlay a top-lit vertical gradient onto the CURRENT path (already filled in
-// the body colour): white highlight up top, transparent middle, dark shadow
-// below. Colour-agnostic, so it shades any element hue and gives round volume.
-function vshade(ctx, top, bot, hi, lo) {
+// --- Shading helpers (all in the body-local frame) -------------------------
+// Radial "muscle pocket": a soft light or dark blob to sculpt anatomical form.
+function pocket(ctx, x, y, r, rgb, a) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')');
+  g.addColorStop(1, 'rgba(' + rgb + ',0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+}
+// Top-lit vertical gradient (caller has already clipped to the shape).
+function vgrad(ctx, top, bot, hi, lo) {
   const g = ctx.createLinearGradient(0, top, 0, bot);
   g.addColorStop(0, 'rgba(255,255,255,' + hi + ')');
   g.addColorStop(0.5, 'rgba(255,255,255,0)');
   g.addColorStop(1, 'rgba(0,0,0,' + lo + ')');
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = g;
-  ctx.fillRect(-22, top, 44, bot - top);
-  ctx.restore();
+  ctx.fillStyle = g; ctx.fillRect(-24, top, 48, bot - top);
+}
+// Warm rim/back light: stroke the current path, bright along its top edge.
+function rim(ctx, top, bot, a) {
+  const g = ctx.createLinearGradient(0, top, 0, bot);
+  g.addColorStop(0, 'rgba(255,246,225,' + a + ')');
+  g.addColorStop(1, 'rgba(255,246,225,0)');
+  ctx.strokeStyle = g; ctx.lineWidth = 1.2; ctx.lineJoin = 'round'; ctx.stroke();
 }
 
-// Body art in the shared (translate/rotate/scale) local frame. One smooth
-// horse torso: chest -> withers -> back -> croup -> rump -> belly, curved.
-function drawBody(ctx, f, body) {
+// Smooth horse torso path: chest -> withers -> back -> croup -> rump -> belly.
+function bodyPath(ctx, f) {
   ctx.beginPath();
   ctx.moveTo(f * 12, -2);
-  ctx.quadraticCurveTo(f * 10, -6, f * 6, -6);        // over the withers
-  ctx.quadraticCurveTo(0, -7.5, -f * 4, -6.5);        // along the back
-  ctx.quadraticCurveTo(-f * 10, -5.5, -f * 12, -1);   // over the croup
-  ctx.quadraticCurveTo(-f * 14.5, 3, -f * 11, 6.5);   // down the rump
-  ctx.quadraticCurveTo(-f * 6, 8.5, -f * 1, 7.5);     // along the belly (tuck)
-  ctx.quadraticCurveTo(f * 6, 7, f * 10, 5);          // brisket
-  ctx.quadraticCurveTo(f * 14.5, 2, f * 12, -2);      // up the chest
+  ctx.quadraticCurveTo(f * 10, -6, f * 6, -6);
+  ctx.quadraticCurveTo(0, -7.5, -f * 4, -6.5);
+  ctx.quadraticCurveTo(-f * 10, -5.5, -f * 12, -1);
+  ctx.quadraticCurveTo(-f * 14.5, 3, -f * 11, 6.5);
+  ctx.quadraticCurveTo(-f * 6, 8.5, -f * 1, 7.5);
+  ctx.quadraticCurveTo(f * 6, 7, f * 10, 5);
+  ctx.quadraticCurveTo(f * 14.5, 2, f * 12, -2);
   ctx.closePath();
-  ctx.fillStyle = body;
-  ctx.fill();
-  vshade(ctx, -8, 8, 0.22, 0.34);
 }
 
-// Neck + head + horn, nodding by `nod`. Local frame.
+function drawBody(ctx, f, body) {
+  bodyPath(ctx, f);
+  ctx.fillStyle = body;
+  ctx.fill();
+  // Anatomical form: shadow grooves + lit muscle tops (key light front-top).
+  ctx.save();
+  ctx.clip();
+  pocket(ctx, f * 3, 4.5, 8, '0,0,0', 0.3);      // girth / behind the elbow
+  pocket(ctx, -f * 5, 3.5, 9, '0,0,0', 0.26);    // flank & stifle groove
+  pocket(ctx, -f * 12, 2.5, 6, '0,0,0', 0.32);   // hamstring shadow
+  pocket(ctx, f * 1, -1, 5, '0,0,0', 0.12);      // shoulder crease
+  pocket(ctx, f * 8, -3, 5.5, '255,250,235', 0.3);   // shoulder highlight
+  pocket(ctx, -f * 8, -3.5, 6, '255,250,235', 0.24); // haunch highlight
+  pocket(ctx, 0, -4, 7, '255,250,235', 0.14);        // barrel top sheen
+  vgrad(ctx, -8, 8, 0.08, 0.26);
+  // A hint of fur along the lit back.
+  ctx.strokeStyle = 'rgba(255,250,235,0.25)';
+  ctx.lineWidth = 0.5;
+  for (let i = -10; i <= 8; i += 2) { ctx.beginPath(); ctx.moveTo(f * i, -6.6); ctx.lineTo(f * (i + 0.6), -5); ctx.stroke(); }
+  ctx.restore();
+  bodyPath(ctx, f); rim(ctx, -8, 2, 0.7);
+}
+
+// Neck + head + spiral horn, nodding by `nod`. Local frame.
 function drawHead(ctx, f, body, nod) {
-  ctx.fillStyle = body;
-  // Neck: withers up to the poll (sweeps up and forward).
-  ctx.beginPath();
-  ctx.moveTo(f * 4, -4);
-  ctx.lineTo(f * 9, -10 + nod * 0.5);
-  ctx.lineTo(f * 14, -14 + nod);
-  ctx.lineTo(f * 16, -11 + nod);
-  ctx.lineTo(f * 10, -3);
-  ctx.lineTo(f * 6, 0);
-  ctx.closePath();
-  ctx.fill();
-  vshade(ctx, -14 + nod, 1, 0.2, 0.26);
-  // Head: a long, slightly dished face tapering to a rounded muzzle.
+  const neck = () => {
+    ctx.beginPath();
+    ctx.moveTo(f * 4, -4);
+    ctx.lineTo(f * 9, -10 + nod * 0.5);
+    ctx.lineTo(f * 14, -14 + nod);
+    ctx.lineTo(f * 16, -11 + nod);
+    ctx.lineTo(f * 10, -3);
+    ctx.lineTo(f * 6, 0);
+    ctx.closePath();
+  };
+  neck(); ctx.fillStyle = body; ctx.fill();
+  ctx.save(); neck(); ctx.clip();
+  pocket(ctx, f * 8, -4, 5, '0,0,0', 0.24);         // jugular groove
+  pocket(ctx, f * 10, -11 + nod, 4, '255,250,235', 0.26); // crest highlight
+  vgrad(ctx, -14 + nod, 1, 0.12, 0.24);
+  ctx.restore();
+  neck(); rim(ctx, -14 + nod, -4, 0.6);
+
+  // Head.
   const hx = f * 15, hy = -12 + nod;
-  ctx.fillStyle = body;
-  ctx.beginPath();
-  ctx.moveTo(hx - f * 1.5, hy - 2.5);   // poll / forehead
-  ctx.lineTo(hx + f * 5, hy - 0.5);     // nose bridge
-  ctx.lineTo(hx + f * 8.5, hy + 2);     // nostril
-  ctx.lineTo(hx + f * 8, hy + 4);       // rounded muzzle front
-  ctx.lineTo(hx + f * 5.5, hy + 4.8);   // lip
-  ctx.lineTo(hx + f * 2, hy + 4.5);     // chin / jaw
-  ctx.lineTo(hx - f * 1.5, hy + 1.5);   // cheek -> throat
-  ctx.closePath();
-  ctx.fill();
-  vshade(ctx, hy - 3, hy + 5, 0.18, 0.22);
+  const head = () => {
+    ctx.beginPath();
+    ctx.moveTo(hx - f * 1.5, hy - 2.5);
+    ctx.lineTo(hx + f * 5, hy - 0.5);
+    ctx.lineTo(hx + f * 8.5, hy + 2);
+    ctx.lineTo(hx + f * 8, hy + 4);
+    ctx.lineTo(hx + f * 5.5, hy + 4.8);
+    ctx.lineTo(hx + f * 2, hy + 4.5);
+    ctx.lineTo(hx - f * 1.5, hy + 1.5);
+    ctx.closePath();
+  };
+  head(); ctx.fillStyle = body; ctx.fill();
+  ctx.save(); head(); ctx.clip();
+  pocket(ctx, hx + f * 3, hy + 3.5, 5, '0,0,0', 0.24);   // jaw shadow
+  pocket(ctx, hx + f * 4, hy - 0.5, 4, '255,250,235', 0.22); // nose bridge light
+  vgrad(ctx, hy - 3, hy + 5, 0.1, 0.18);
+  ctx.restore();
+  head(); rim(ctx, hy - 3, hy + 1, 0.55);
+
   // Ear.
+  ctx.fillStyle = body;
   ctx.beginPath();
   ctx.moveTo(hx - f * 1, hy - 1);
   ctx.lineTo(hx - f * 2, hy - 5);
   ctx.lineTo(hx + f * 0.5, hy - 2);
   ctx.closePath();
   ctx.fill();
-  // Horn — the last horn.
-  ctx.fillStyle = '#f2f2f2';
+
+  drawHorn(ctx, hx, hy, f);
+
+  // Eye with a catchlight.
+  ctx.fillStyle = '#15151b';
+  ctx.beginPath(); ctx.arc(hx + f * 2, hy + 1, 1, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath(); ctx.arc(hx + f * 2.4, hy + 0.6, 0.32, 0, TAU); ctx.fill();
+}
+
+// Ivory horn with a spiral ridge pattern and a lit edge.
+function drawHorn(ctx, hx, hy, f) {
+  const bx = hx + f * 1.5, by0 = hy - 2, tx = hx + f * 8, ty = hy - 12, bw = 2.2;
+  const g = ctx.createLinearGradient(bx, by0, tx, ty);
+  g.addColorStop(0, '#cdbd93');
+  g.addColorStop(1, '#fbf4dd');
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(hx + f * 1, hy - 2);
-  ctx.lineTo(hx + f * 8, hy - 10);
-  ctx.lineTo(hx + f * 3.5, hy - 1);
+  ctx.moveTo(bx - f * bw, by0);
+  ctx.lineTo(tx, ty);
+  ctx.lineTo(bx + f * bw, by0);
   ctx.closePath();
   ctx.fill();
-  // Eye.
-  ctx.fillStyle = '#15151b';
-  ctx.beginPath();
-  ctx.arc(hx + f * 2, hy + 1, 0.9, 0, TAU);
-  ctx.fill();
+  // Spiral ridges: short diagonals crossing the taper.
+  ctx.strokeStyle = 'rgba(120,100,60,0.5)';
+  ctx.lineWidth = 0.7; ctx.lineCap = 'round';
+  for (let i = 1; i <= 4; i++) {
+    const t = i / 5, cxp = bx + (tx - bx) * t, cyp = by0 + (ty - by0) * t, wv = bw * (1 - t) + 0.3;
+    ctx.beginPath();
+    ctx.moveTo(cxp - f * wv, cyp + 0.7);
+    ctx.lineTo(cxp + f * wv, cyp - 0.7);
+    ctx.stroke();
+  }
+  // Lit edge.
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.moveTo(bx + f * bw * 0.5, by0); ctx.lineTo(tx, ty); ctx.stroke();
 }
 
 export function drawUnicorn(ctx, p, ix, iy) {
@@ -254,7 +342,7 @@ export function drawUnicorn(ctx, p, ix, iy) {
   ctx.ellipse(cx, p.y + p.h, 12, 2.2, 0, 0, TAU);
   ctx.fill();
 
-  strand(ctx, tail, 3);
+  strand(ctx, tail, 3, 1);
 
   const hip = (i) => bodyPoint(f * LEGS[i].hx, LEGS[i].hy, cx, bcy);
   const darker = '#3a3a44';
@@ -277,7 +365,7 @@ export function drawUnicorn(ctx, p, ix, iy) {
   drawHead(ctx, f, body, gNod);
   ctx.restore();
 
-  strand(ctx, mane, 3.2);
+  strand(ctx, mane, 5.5, 1);
 
   ctx.restore();
 }
