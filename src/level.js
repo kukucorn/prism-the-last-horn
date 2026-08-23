@@ -7,6 +7,7 @@
 // Legend:  #=solid  O=breakable rock  ^=spike(hazard)  S=spawn  G=goal  .=empty
 export const TILE = 12;
 
+// Each stage purifies one colour (revealed on clear = COLORS[stageIndex]).
 const LEVELS = [
   [
     '########################################', // 0  ceiling (stops gravity-flip)
@@ -32,7 +33,33 @@ const LEVELS = [
     '#.S.....OOOOOO.....^^^^^...............#', // 20 spawn, rocks, spike pit
     '########################################', // 21 ground (+ side walls)
   ],
+  [
+    '########################################', // 0  ceiling
+    '#......................................#', // 1
+    '#...G..................................#', // 2  goal
+    '#..#####...............................#', // 3  goal platform
+    '#......................................#', // 4
+    '#......................................#', // 5
+    '#........#####.........................#', // 6  step 5
+    '#......................................#', // 7
+    '#......................................#', // 8
+    '#..............#####...................#', // 9  step 4
+    '#......................................#', // 10
+    '#......................................#', // 11
+    '#...................#####..............#', // 12 step 3
+    '#......................................#', // 13
+    '#......................................#', // 14
+    '#........................#####.........#', // 15 step 2
+    '#......................................#', // 16
+    '#......................................#', // 17
+    '#.............................#####....#', // 18 step 1
+    '#......................................#', // 19
+    '#..............^^^^^^...............S..#', // 20 spike pit + spawn
+    '########################################', // 21 ground
+  ],
 ];
+
+export const LEVEL_COUNT = LEVELS.length;
 
 // Parse a row array into world geometry. Returns pixel-space rects/points.
 export function parseLevel(rows, tile) {
@@ -78,4 +105,7 @@ export function parseLevel(rows, tile) {
   return { solids, hazards, rocks, spawn, goal, w: rows[0].length * tile, h: rows.length * tile };
 }
 
-export const level = parseLevel(LEVELS[0], TILE);
+// Parse and return stage `i` (wraps around past the last stage).
+export function loadLevel(i) {
+  return parseLevel(LEVELS[i % LEVEL_COUNT], TILE);
+}
