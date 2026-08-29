@@ -10,8 +10,10 @@ import { loadLevel, LEVEL_COUNT } from './level.js';
 import { overlap } from './physics.js';
 import { initUnicorn, updateUnicorn, drawUnicorn } from './unicorn.js';
 import { snd, S_HURT, S_FREEZE, S_GOAL } from './sfx.js';
+import { makeBoss, updateBoss, drawBoss } from './boss.js';
 
 const WIDTH = 480, HEIGHT = 270;
+const BOSS_STAGE = LEVEL_COUNT - 1; // last stage is the boss arena
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
 const FREEZE_DUR = 120;  // frames an Ice-frozen trap stays inert
@@ -42,6 +44,8 @@ let lv = loadLevel(lvi); // parsed geometry for the current stage
 let clearT = 0;          // clear-transition frames remaining (0 = playing)
 let revealHue = 0;       // element colour being purified this clear
 const purified = [];     // colour indices already purified (backdrop aurora)
+let boss = null;         // boss instance while on the arena stage
+let won = false;         // world fully purified (victory)
 
 const player = makePlayer(lv.spawn.x - 6, lv.spawn.y - 16);
 initUnicorn(player);
@@ -65,17 +69,29 @@ function advance() {
   lvi++;
   lv = loadLevel(lvi);
   respawn();
+  boss = lvi === BOSS_STAGE ? makeBoss() : null;
   if (import.meta.env.DEV) window.LV = lv;
+}
+
+// Boss purified: the world is whole again.
+function onWin() {
+  won = true;
+  for (let i = 0; i < 7; i++) if (!purified.includes(i)) purified.push(i);
+  snd(S_GOAL);
 }
 
 // Dev-only inspection hook (stripped from the production build).
 if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
-  window.stage = () => ({ lvi, clearT, purified: [...purified] });
-  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); window.LV = lv; clearT = 0; };
+  window.stage = () => ({ lvi, clearT, purified: [...purified], bossHp: boss && boss.hp, won });
+  window.getBoss = () => boss;
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); window.LV = lv; clearT = 0; won = false; boss = i === BOSS_STAGE ? makeBoss() : null; };
 }
 
 function update() {
+  // Victory: freeze play, just keep the unicorn idling.
+  if (won) { updateUnicorn(player, STEP); return; }
+
   // Stage-clear transition: freeze play, swap stage at the midpoint.
   if (clearT > 0) {
     clearT--;
@@ -99,8 +115,11 @@ function update() {
   }
   if (died) { snd(S_HURT); respawn(); }
 
-  // Reached the goal -> purify + advance.
-  if (lv.goal && overlap(player, lv.goal)) startClear();
+  if (boss) {
+    updateBoss(boss, player, onWin);      // colour-parry duel
+  } else if (lv.goal && overlap(player, lv.goal)) {
+    startClear();                          // reached the goal -> purify + advance
+  }
 
   updateUnicorn(player, STEP);
 }
@@ -264,6 +283,22 @@ function render(alpha) {
 
   drawUnicorn(ctx, player, x, y);
 
+  if (boss) drawBoss(ctx, boss);
+
+  // Victory: the world blooms into full colour.
+  if (won) {
+    ctx.globalAlpha = 0.22;
+    for (let i = 0; i < 7; i++) { ctx.fillStyle = COLORS[i]; ctx.fillRect(0, HEIGHT * i / 7, WIDTH, HEIGHT / 7 + 1); }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('THE WORLD IS PURIFIED', WIDTH / 2, HEIGHT / 2 - 6);
+    ctx.font = '10px monospace';
+    ctx.fillText('the last horn shines again', WIDTH / 2, HEIGHT / 2 + 12);
+    ctx.textAlign = 'left';
+  }
+
   // --- Stage-clear purification wash --------------------------------------
   if (clearT > 0) {
     const k = 1 - Math.abs(clearT - HALF) / HALF; // 0 -> 1 -> 0
@@ -294,7 +329,8 @@ function render(alpha) {
   ctx.font = '10px monospace';
   ctx.fillText('PRISM — THE LAST HORN', 8, 14);
   ctx.fillStyle = '#888';
-  ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
+  if (boss) ctx.fillText('THE MONOCHROME   match its colour to parry!', 8, 26);
+  else ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
   ctx.fillText('element: ' + NAMES[player.el] + '   [C] swap   [<>] move   [^] jump   [X] skill', 8, HEIGHT - 8);
 
   ctx.restore();
