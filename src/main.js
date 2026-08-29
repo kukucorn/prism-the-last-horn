@@ -69,7 +69,11 @@ function advance() {
 }
 
 // Dev-only inspection hook (stripped from the production build).
-if (import.meta.env.DEV) { window.P = player; window.LV = lv; window.stage = () => ({ lvi, clearT, purified: [...purified] }); }
+if (import.meta.env.DEV) {
+  window.P = player; window.LV = lv;
+  window.stage = () => ({ lvi, clearT, purified: [...purified] });
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); window.LV = lv; clearT = 0; };
+}
 
 function update() {
   // Stage-clear transition: freeze play, swap stage at the midpoint.
