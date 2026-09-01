@@ -47,9 +47,34 @@ const purified = [];     // colour indices already purified (backdrop aurora)
 let boss = null;         // boss instance while on the arena stage
 let won = false;         // world fully purified (victory)
 
+// Contextual control tooltips: teach each stage's skill key on first arrival,
+// and the colour-swap key once it first matters (the boss duel).
+const SKILL_HINT = [
+  'press [X] to DASH across the spikes',
+  'press [X] in the air to SLAM through rock',
+  'press [X] to BLINK through the walls',
+  'press [X] in the air to DOUBLE-JUMP the gaps',
+  'hold [X] to FLOAT up the shaft',
+  'walk through as ICE — spikes FREEZE on touch',
+  'press [X] to FLIP gravity and walk the ceiling',
+];
+let skillUsed = false;   // player demonstrated this stage's skill (hides its hint)
+let swapUsed = false;    // player has swapped colour at least once (hides swap hint)
+let prevEl = 0;          // last frame's element, to detect a swap
+
 const player = makePlayer(lv.spawn.x - 6, lv.spawn.y - 16);
 initUnicorn(player);
 let prevX = player.x, prevY = player.y;
+
+// Progressive unlock: on stage i you hold elements 0..i (the newest = element i
+// is the one this stage is built around). Entering a stage equips it by default.
+function syncElements() {
+  player.unlocked = Math.min(lvi + 1, 7);
+  player.el = Math.min(lvi, 6);
+  prevEl = player.el;
+  skillUsed = false; // re-show the skill hint for the newly-introduced element
+}
+syncElements();
 
 function respawn() {
   player.x = lv.spawn.x - 6; player.y = lv.spawn.y - 16;
@@ -69,6 +94,7 @@ function advance() {
   lvi++;
   lv = loadLevel(lvi);
   respawn();
+  syncElements();
   boss = lvi === BOSS_STAGE ? makeBoss() : null;
   if (import.meta.env.DEV) window.LV = lv;
 }
@@ -85,7 +111,7 @@ if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
   window.stage = () => ({ lvi, clearT, purified: [...purified], bossHp: boss && boss.hp, won });
   window.getBoss = () => boss;
-  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); window.LV = lv; clearT = 0; won = false; boss = i === BOSS_STAGE ? makeBoss() : null; };
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; boss = i === BOSS_STAGE ? makeBoss() : null; };
 }
 
 function update() {
@@ -104,12 +130,19 @@ function update() {
   prevY = player.y;
   updatePlayer(player, STEP, lv.solids, lv.hazards, lv.rocks);
 
+  // Tooltip triggers: any active-skill press (glow) clears the skill hint; the
+  // passive Ice skill clears it on the first freeze (handled below). A colour
+  // change clears the swap hint for good.
+  if (player.el !== INDIGO && player.glow > 0) skillUsed = true;
+  if (player.el !== prevEl) swapUsed = true;
+  prevEl = player.el;
+
   // Hazards: frozen spikes are inert; Ice freezes any it touches; else lethal.
   let died = player.y > HEIGHT + 40;
   for (const h of lv.hazards) {
     if (h.frozen > 0) { h.frozen--; continue; }
     if (!died && overlap(player, h)) {
-      if (player.el === INDIGO) { h.frozen = FREEZE_DUR; snd(S_FREEZE); }
+      if (player.el === INDIGO) { h.frozen = FREEZE_DUR; skillUsed = true; snd(S_FREEZE); }
       else if (!player.inv) died = true;
     }
   }
@@ -322,6 +355,24 @@ function render(alpha) {
     ctx.fillText('STAGE ' + (lvi + 1), WIDTH / 2, HEIGHT / 2 + 8);
     ctx.textAlign = 'left';
     ctx.globalAlpha = 1;
+  }
+
+  // Contextual control tooltip (only during active play): teach the stage's
+  // skill key, or the colour-swap key once the boss makes it matter.
+  if (clearT === 0 && !won) {
+    let tip = null, col = '#fff';
+    if (boss && !swapUsed) { tip = 'press [C] to SWAP colour and match its shots'; col = COLORS[player.el]; }
+    else if (!boss && !skillUsed) { tip = SKILL_HINT[lvi % 7]; col = COLORS[lvi % 7]; }
+    if (tip) {
+      const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 260);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 10px monospace';
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = col;
+      ctx.fillText(tip, WIDTH / 2, 52);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'left';
+    }
   }
 
   // HUD.

@@ -56,6 +56,7 @@ export function makePlayer(x, y) {
     coyote: 0,
     buffer: 0,
     el: 0,          // current element index (0..6)
+    unlocked: 1,    // elements available so far (progressive: +1 per stage cleared)
     swapLock: 0,
     face: 1,
     glow: 0,        // brief feedback on skill press
@@ -82,7 +83,7 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   // --- Element swap (0.1s lock) -------------------------------------------
   if (p.swapLock > 0) p.swapLock--;
   if (input.pressed(SWAP) && p.swapLock === 0) {
-    p.el = (p.el + 1) % 7;
+    p.el = (p.el + 1) % (p.unlocked || 7);
     p.swapLock = SWAP_DELAY;
     snd(S_SWAP);
   }
