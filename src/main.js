@@ -8,7 +8,7 @@ import { COLORS, NAMES, INDIGO } from './palette.js';
 import { makePlayer, updatePlayer } from './player.js';
 import { loadLevel, LEVEL_COUNT } from './level.js';
 import { overlap } from './physics.js';
-import { initUnicorn, updateUnicorn, drawUnicorn } from './unicorn.js';
+import { drawUnicornPixel } from './pixelUnicorn.js';
 import { snd, S_HURT, S_FREEZE, S_GOAL } from './sfx.js';
 import { makeBoss, updateBoss, drawBoss } from './boss.js';
 
@@ -63,7 +63,6 @@ let swapUsed = false;    // player has swapped colour at least once (hides swap 
 let prevEl = 0;          // last frame's element, to detect a swap
 
 const player = makePlayer(lv.spawn.x - 6, lv.spawn.y - 16);
-initUnicorn(player);
 let prevX = player.x, prevY = player.y;
 
 // Progressive unlock: on stage i you hold elements 0..i (the newest = element i
@@ -115,14 +114,13 @@ if (import.meta.env.DEV) {
 }
 
 function update() {
-  // Victory: freeze play, just keep the unicorn idling.
-  if (won) { updateUnicorn(player, STEP); return; }
+  // Victory: freeze play (the unicorn idles via its own animation clock).
+  if (won) return;
 
   // Stage-clear transition: freeze play, swap stage at the midpoint.
   if (clearT > 0) {
     clearT--;
     if (clearT === HALF) advance();
-    updateUnicorn(player, STEP);
     return;
   }
 
@@ -153,8 +151,6 @@ function update() {
   } else if (lv.goal && overlap(player, lv.goal)) {
     startClear();                          // reached the goal -> purify + advance
   }
-
-  updateUnicorn(player, STEP);
 }
 
 // 0..1 alpha -> 2-digit hex, for `#rrggbb` + alpha fills.
@@ -314,7 +310,7 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
-  drawUnicorn(ctx, player, x, y);
+  drawUnicornPixel(ctx, player, x, y);
 
   if (boss) drawBoss(ctx, boss);
 
