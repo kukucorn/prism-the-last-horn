@@ -69,11 +69,17 @@ function buildGrid(frame) {
   const fl = (x, y) => inb(x, y) && g[y][x] !== 0; const out = [];
   for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) if (g[y][x] === 0 && (fl(x - 1, y) || fl(x + 1, y) || fl(x, y - 1) || fl(x, y + 1))) out.push([x, y]);
   for (const [x, y] of out) g[y][x] = 7;
-  // --- mane: full rainbow crest (red near the face) + strand texture ---
-  const MI = (x) => Math.max(0, Math.min(6, Math.round((1 - (x - 76) / 28) * 6)));
-  for (let x = 74; x <= 104; x++) { const cy = NC(Math.min(x, 100)), idx = MI(x), th = Math.round(16 - Math.abs(x - 90) / 3); for (let dy = 0; dy <= th; dy++) set(g, x - Math.round(dy * 0.28), cy - dy, 20 + idx); }
-  for (let s = 0; s < 18; s++) { const x = 76 + s * 1.6 | 0, cy = NC(Math.min(x, 100)), idx = MI(x), lit = s % 2; strand(g, x, cy - 14, x + 3, cy - 4, x + 7, cy + 10, lit ? 40 + idx : 30 + idx, 1); }
-  strand(g, 101, 24, 104, 30, 106, 40, 40, 1); strand(g, 103, 26, 105, 32, 107, 42, 42, 1);
+  // --- mane: clean rainbow stripes flowing along the neck crest ---
+  // Coloured by perpendicular distance from the crest: violet against the neck,
+  // out through the spectrum to red on the leading/outer edge (matches the ref).
+  // 2px bands stay continuous along the whole neck; thickness tapers at the ends.
+  for (let x = 75; x <= 101; x++) {
+    const cy = NC(Math.min(x, 100));
+    const th = Math.round(14 - Math.max(0, Math.abs(x - 89) - 7) * 0.9);
+    for (let dy = 0; dy <= th; dy++) { const idx = Math.max(0, Math.min(6, 6 - Math.floor(dy / 2))); set(g, x - Math.round(dy * 0.18), cy - dy, 20 + idx); }
+  }
+  // forelock: a short rainbow tuft falling forward over the brow
+  for (let dy = 0; dy <= 9; dy++) { const idx = Math.max(0, Math.min(6, 6 - Math.floor(dy / 2))); set(g, 101 + Math.round(dy * 0.45), 26 + dy, 20 + idx); }
   // --- tail: rainbow drape + strand texture (sways in motion) ---
   const sway = air ? 3 : gallop ? [0, 1, 2, 1][ph] : 0;
   for (let cy = 44; cy <= 86; cy++) { const t = (cy - 44) / 42, cx = Math.round(30 - 12 * t - 4 * Math.sin(t * 2.2)) - Math.round(sway * t), w = cy > 78 ? 9 : 13; for (let k = 0; k < w; k++) set(g, cx + k - 3, cy, 20 + Math.floor(k * 6.99 / w)); }
