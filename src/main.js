@@ -17,6 +17,7 @@ const BOSS_STAGE = LEVEL_COUNT - 1; // last stage is the boss arena
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25;
 const FREEZE_DUR = 120;  // frames an Ice-frozen trap stays inert
+const INTRO_DUR = 180;   // boss entrance sequence length (frames, ~3s)
 const CLEAR_DUR = 100;   // stage-clear transition length
 const HALF = CLEAR_DUR / 2;
 
@@ -45,6 +46,9 @@ let clearT = 0;          // clear-transition frames remaining (0 = playing)
 let revealHue = 0;       // element colour being purified this clear
 const purified = [];     // colour indices already purified (backdrop aurora)
 let boss = null;         // boss instance while on the arena stage
+let introT = 0;          // boss entrance sequence frames remaining (0 = fighting)
+let camX = 0;            // horizontal camera offset (0 on single-screen stages)
+let lastCheck = null;    // last checkpoint passed on the chase runner
 let won = false;         // world fully purified (victory)
 
 // Contextual control tooltips: teach each stage's skill key on first arrival,
@@ -95,7 +99,19 @@ function advance() {
   respawn();
   syncElements();
   boss = lvi === BOSS_STAGE ? makeBoss() : null;
+  introT = boss ? INTRO_DUR : 0;
+  lastCheck = boss ? lv.spawn : null;
   if (import.meta.env.DEV) window.LV = lv;
+}
+
+// Chase respawn: back to the last checkpoint, wall reset behind it.
+function respawnChase() {
+  const c = lastCheck || lv.spawn;
+  player.x = c.x - 6; player.y = c.y - 16;
+  player.vx = player.vy = 0; player.gflip = 1;
+  prevX = player.x; prevY = player.y;
+  if (boss) { boss.x = c.x - 130; boss.sp = boss.sp0; }
+  snd(S_HURT);
 }
 
 // Boss purified: the world is whole again.
@@ -110,7 +126,7 @@ if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
   window.stage = () => ({ lvi, clearT, purified: [...purified], bossHp: boss && boss.hp, won });
   window.getBoss = () => boss;
-  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; boss = i === BOSS_STAGE ? makeBoss() : null; };
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; };
 }
 
 function update() {
@@ -123,6 +139,9 @@ function update() {
     if (clearT === HALF) advance();
     return;
   }
+
+  // Boss entrance: freeze play while the Monochrome looms and is named.
+  if (introT > 0) { introT--; return; }
 
   prevX = player.x;
   prevY = player.y;
@@ -144,10 +163,14 @@ function update() {
       else if (!player.inv) died = true;
     }
   }
-  if (died) { snd(S_HURT); respawn(); }
+  if (died) { if (boss) respawnChase(); else { snd(S_HURT); respawn(); } }
 
   if (boss) {
-    updateBoss(boss, player, onWin);      // colour-parry duel
+    // Chase runner: record checkpoints, advance the wall, win at the far light.
+    const cx = player.x + player.w / 2;
+    for (const c of lv.checks) if (cx > c.x && (!lastCheck || c.x > lastCheck.x)) lastCheck = c;
+    updateBoss(boss, player, respawnChase);
+    if (lv.goal && overlap(player, lv.goal)) onWin();
   } else if (lv.goal && overlap(player, lv.goal)) {
     startClear();                          // reached the goal -> purify + advance
   }
@@ -184,6 +207,12 @@ function render(alpha) {
     ctx.fillStyle = gg;
     ctx.fillRect(0, 0, WIDTH, HEIGHT * 0.7);
   }
+
+  // Camera: follow the player horizontally on wide stages (clamped; 0 elsewhere).
+  const ipx = prevX + (player.x - prevX) * alpha;
+  camX = Math.max(0, Math.min(lv.w - WIDTH, ipx + player.w / 2 - WIDTH * 0.42));
+  ctx.save();
+  ctx.translate(-camX, 0);
 
   // Solids.
   ctx.fillStyle = '#2a2a2a';
@@ -312,7 +341,28 @@ function render(alpha) {
 
   drawUnicornPixel(ctx, player, x, y);
 
-  if (boss) drawBoss(ctx, boss);
+  ctx.restore(); // end camera — overlays, chase wall and HUD are screen-space
+
+  // The Monochrome: an advancing wall of un-colour chasing from the left.
+  if (boss) drawBoss(ctx, boss, camX);
+
+  // Boss entrance: darken the arena, then name the enemy and the stakes.
+  if (introT > 0) {
+    const k = 1 - Math.abs(introT - INTRO_DUR / 2) / (INTRO_DUR / 2); // 0 -> 1 -> 0
+    ctx.fillStyle = '#000000' + A(0.6 * Math.min(1, introT / (INTRO_DUR * 0.3)));
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.globalAlpha = Math.min(1, k * 2.2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#e6e6ee';
+    ctx.font = 'bold 17px monospace';
+    ctx.fillText('THE MONOCHROME', WIDTH / 2, HEIGHT / 2 - 6);
+    ctx.fillStyle = '#9a9aa8';
+    ctx.font = '9px monospace';
+    ctx.fillText('it drained the world of colour', WIDTH / 2, HEIGHT / 2 + 12);
+    ctx.fillText('give it back', WIDTH / 2, HEIGHT / 2 + 26);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  }
 
   // Victory: the world blooms into full colour.
   if (won) {
@@ -357,7 +407,7 @@ function render(alpha) {
   // skill key, or the colour-swap key once the boss makes it matter.
   if (clearT === 0 && !won) {
     let tip = null, col = '#fff';
-    if (boss && !swapUsed) { tip = 'press [C] to SWAP colour and match its shots'; col = COLORS[player.el]; }
+    if (boss && !swapUsed) { tip = 'RUN! swap [C] to each section\'s skill and use [X]'; col = COLORS[player.el]; }
     else if (!boss && !skillUsed) { tip = SKILL_HINT[lvi % 7]; col = COLORS[lvi % 7]; }
     if (tip) {
       const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 260);
@@ -376,7 +426,7 @@ function render(alpha) {
   ctx.font = '10px monospace';
   ctx.fillText('PRISM — THE LAST HORN', 8, 14);
   ctx.fillStyle = '#888';
-  if (boss) ctx.fillText('THE MONOCHROME   match its colour to parry!', 8, 26);
+  if (boss) ctx.fillText('THE MONOCHROME   OUTRUN IT — reach the light', 8, 26);
   else ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
   ctx.fillText('element: ' + NAMES[player.el] + '   [C] swap   [<>] move   [^] jump   [X] skill', 8, HEIGHT - 8);
 
