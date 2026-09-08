@@ -23,27 +23,28 @@ const SWAP_DELAY = 6;      // ~0.1s element-swap lock
 // Fire (Red) dash.
 const DASH_SPEED = 360;    // px/s burst forward
 const DASH_DUR = 12;       // frames of dash
-const DASH_CD = 30;        // frames of cooldown after it ends
+const DASH_CD = 48;        // frames of cooldown after it ends (~0.8s)
 
 // Earth (Orange) slam.
 const SLAM_SPEED = 720;    // px/s straight down
 const SHOCK_R = 30;        // shockwave rock-shatter radius
 const SHOCK_DUR = 16;      // frames the shockwave ring animates
-const EARTH_CD = 20;       // cooldown after a slam lands
+const EARTH_CD = 42;       // cooldown after a slam lands (~0.7s)
 
 // Light (Yellow) blink.
 const BLINK_DIST = 64;     // px teleported forward
 const BLINK_DUR = 10;      // frames the light streak lingers
-const LIGHT_CD = 40;       // cooldown
+const LIGHT_CD = 48;       // cooldown (~0.8s)
 
-// Nature (Green) double jump + glide.
-const GLIDE_FALL = 120;    // capped fall speed while gliding
+// Nature (Green) double jump + glide (a slow, far-carrying glide-flight).
+const GLIDE_FALL = 42;     // capped fall speed while gliding (low -> long glide)
 const DJ_DUR = 12;         // frames the double-jump ring animates
 
-// Water (Blue) buoyant float.
+// Water (Blue) buoyant float — only works while submerged in a water zone.
 const FLOAT_GRAV = 0.2;    // fraction of gravity that still applies
 const FLOAT_LIFT = 560;    // upward buoyancy accel, px/s^2 (net ~ -280 = rises)
 const FLOAT_RISE = 140;    // capped upward drift speed
+const SINK_GRAV = 0.3;     // gentle buoyant sink when in water but not rising
 
 // Gravity (Violet) flip.
 const GRAV_CD = 10;        // cooldown so you can't strobe the flip
@@ -71,6 +72,7 @@ export function makePlayer(x, y) {
     gliding: false, // currently gliding
     djT: 0,         // double-jump ring animation frames
     floating: false, // Water buoyant float active
+    inWater: false, // submerged in a water zone (enables float)
     gflip: 1,       // gravity direction: +1 down, -1 up (Violet flips it)
     flipT: 0,       // gravity-flip flash frames
   };
@@ -191,14 +193,18 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
 
   // --- Gravity (direction = p.gflip) ---------------------------------------
   const g = p.gflip;
-  // Water buoyancy: holding the skill in the air swaps full gravity for a weak
-  // one plus a lift opposite gravity, so the unicorn drifts away from the floor.
-  p.floating = p.el === BLUE && input.down(SKILL) && !p.grounded;
+  // Water: you can only rise while submerged (p.inWater, set by the level). Holding
+  // the skill swaps full gravity for a weak one plus lift, so you swim upward; in
+  // water but not rising you drift with gentle buoyancy; out of water, normal fall.
+  p.floating = p.el === BLUE && input.down(SKILL) && !p.grounded && p.inWater;
   if (p.floating) {
     p.vy += (GRAVITY * FLOAT_GRAV - FLOAT_LIFT) * g * dt;
-    // Cap the drift speed opposite gravity; full fall speed toward it.
     p.vy = g > 0 ? Math.max(-FLOAT_RISE, Math.min(MAX_FALL, p.vy))
                  : Math.min(FLOAT_RISE, Math.max(-MAX_FALL, p.vy));
+  } else if (p.inWater) {
+    p.vy += GRAVITY * SINK_GRAV * g * dt;
+    p.vy = Math.max(-FLOAT_RISE, Math.min(FLOAT_RISE, p.vy)); // slow, buoyant drift
+    p.vx *= 0.9;                                              // water drag
   } else {
     p.vy += GRAVITY * g * dt;
     p.vy = Math.max(-MAX_FALL, Math.min(MAX_FALL, p.vy));

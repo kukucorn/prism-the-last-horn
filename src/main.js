@@ -159,6 +159,7 @@ function update() {
 
   prevX = player.x;
   prevY = player.y;
+  player.inWater = lv.water.some((w) => overlap(player, w)); // gates Water's float
   updatePlayer(player, STEP, lv.solids, lv.hazards, lv.rocks);
 
   // Tooltip triggers: any active-skill press (glow) clears the skill hint; the
@@ -263,6 +264,19 @@ function render(alpha) {
   camX = Math.max(0, Math.min(lv.w - WIDTH, ipx + player.w / 2 - WIDTH * 0.42));
   ctx.save();
   ctx.translate(-camX, 0);
+
+  // Water zones (swim upward here as Water). Translucent fill + a wavy surface.
+  if (lv.water.length) {
+    const topY = Math.min(...lv.water.map((w) => w.y));
+    for (const w of lv.water) { ctx.fillStyle = 'rgba(77,184,255,0.20)'; ctx.fillRect(w.x, w.y, w.w, w.h); }
+    ctx.strokeStyle = 'rgba(150,220,255,0.6)'; ctx.lineWidth = 1;
+    const t = performance.now() / 400;
+    for (const w of lv.water) if (w.y === topY) {
+      ctx.beginPath();
+      for (let x = w.x; x <= w.x + w.w; x += 3) ctx[x === w.x ? 'moveTo' : 'lineTo'](x, w.y + 1.5 + Math.sin(x * 0.3 + t) * 1.5);
+      ctx.stroke();
+    }
+  }
 
   // Solids.
   ctx.fillStyle = '#2a2a2a';
@@ -492,6 +506,15 @@ function render(alpha) {
   if (boss) ctx.fillText('THE MONOCHROME   OUTRUN IT — reach the light', 8, 26);
   else ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
   ctx.fillText('element: ' + NAMES[player.el] + '   [C] swap   [<>] move   [^] jump   [X] skill', 8, HEIGHT - 8);
+
+  // Skill-cooldown gauge (Fire/Earth/Light have real cooldowns now).
+  const ready = player.cd <= 0 && player.dashT === 0 && !player.slam;
+  const gx = WIDTH - 66;
+  ctx.fillStyle = '#777'; ctx.font = '8px monospace';
+  ctx.fillText('SKILL', gx - 30, 14);
+  ctx.fillStyle = '#2a2a2a'; ctx.fillRect(gx, 8, 58, 5);
+  ctx.fillStyle = ready ? COLORS[player.el] : '#b55';
+  ctx.fillRect(gx, 8, 58 * (ready ? 1 : 1 - Math.min(1, player.cd / 48)), 5);
 
   ctx.restore();
 }
