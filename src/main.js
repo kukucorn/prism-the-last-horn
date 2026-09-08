@@ -172,6 +172,7 @@ function update() {
   let died = player.y > HEIGHT + 40;
   for (const h of lv.hazards) {
     if (h.frozen > 0) { h.frozen--; continue; }
+    if (h.mvx) { h.x += h.mvx; if (h.x <= h.x0 || h.x >= h.x1) h.mvx = -h.mvx; } // patrol
     if (!died && overlap(player, h)) {
       if (player.el === INDIGO) { h.frozen = FREEZE_DUR; skillUsed = true; snd(S_FREEZE); }
       else if (!player.inv) died = true;
@@ -282,15 +283,23 @@ function render(alpha) {
     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
   }
 
-  // Spikes (frozen ones icy blue).
+  // Hazards: spikes are triangles; moving blades are spinning saws.
   for (const h of lv.hazards) {
-    ctx.fillStyle = h.frozen > 0 ? '#9fdcff' : '#c33';
-    ctx.beginPath();
-    ctx.moveTo(h.x, h.y + h.h);
-    ctx.lineTo(h.x + h.w / 2, h.y);
-    ctx.lineTo(h.x + h.w, h.y + h.h);
-    ctx.closePath();
-    ctx.fill();
+    const frozen = h.frozen > 0;
+    if (h.mvx) {
+      const cx = h.x + h.w / 2, cy = h.y + h.h / 2, rot = performance.now() / 90;
+      ctx.fillStyle = frozen ? '#9fdcff' : '#d33';
+      ctx.beginPath();
+      for (let i = 0; i < 12; i++) { const a = rot + i / 12 * Math.PI * 2, rr = i % 2 ? h.w * 0.6 : h.w * 0.32; ctx[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = frozen ? '#cdeeff' : '#511'; ctx.beginPath(); ctx.arc(cx, cy, h.w * 0.16, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = frozen ? '#9fdcff' : '#c33';
+      ctx.beginPath();
+      if (h.y < 40) { ctx.moveTo(h.x, h.y); ctx.lineTo(h.x + h.w / 2, h.y + h.h); ctx.lineTo(h.x + h.w, h.y); } // ceiling spike points down
+      else { ctx.moveTo(h.x, h.y + h.h); ctx.lineTo(h.x + h.w / 2, h.y); ctx.lineTo(h.x + h.w, h.y + h.h); }
+      ctx.closePath(); ctx.fill();
+    }
   }
 
   // Goal — a pulsing beacon in this stage's element colour.
