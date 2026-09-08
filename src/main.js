@@ -50,6 +50,7 @@ let introT = 0;          // boss entrance sequence frames remaining (0 = fightin
 let camX = 0;            // horizontal camera offset (0 on single-screen stages)
 let lastCheck = null;    // last checkpoint passed on the chase runner
 let won = false;         // world fully purified (victory)
+let started = false;     // false = title screen; true = playing
 
 // Contextual control tooltips: teach each stage's skill key on first arrival,
 // and the colour-swap key once it first matters (the boss duel).
@@ -121,6 +122,16 @@ function onWin() {
   snd(S_GOAL);
 }
 
+// Restart from stage 1 (used by "play again" after victory).
+function reset() {
+  lvi = 0; lv = loadLevel(0); purified.length = 0;
+  clearT = 0; boss = null; introT = 0; camX = 0; lastCheck = null; won = false;
+  respawn(); syncElements();
+}
+
+// Title: any key begins; a key on the victory screen plays again.
+addEventListener('keydown', () => { if (!started) started = true; else if (won) { reset(); } });
+
 // Dev-only inspection hook (stripped from the production build).
 if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
@@ -130,6 +141,9 @@ if (import.meta.env.DEV) {
 }
 
 function update() {
+  // Title screen: freeze until the player presses a key.
+  if (!started) return;
+
   // Victory: freeze play (the unicorn idles via its own animation clock).
   if (won) return;
 
@@ -179,6 +193,38 @@ function update() {
 // 0..1 alpha -> 2-digit hex, for `#rrggbb` + alpha fills.
 const A = (a) => ('0' + (Math.max(0, Math.min(255, a * 255 | 0))).toString(16)).slice(-2);
 
+// The title card (drawn inside the clipped/scaled viewport).
+const titleHorse = { x: WIDTH / 2 - 6, y: 184, w: 12, h: 16, el: 6, face: 1, grounded: true, vx: 0, gflip: 1 };
+function drawTitle() {
+  const t = performance.now();
+  ctx.textAlign = 'center';
+  // Title
+  ctx.fillStyle = '#ececf2';
+  ctx.font = 'bold 42px monospace';
+  ctx.fillText('PRISM', WIDTH / 2, 74);
+  ctx.fillStyle = '#b45cff';
+  ctx.font = '15px monospace';
+  ctx.fillText('T H E   L A S T   H O R N', WIDTH / 2, 98);
+  // Seven-colour spectrum
+  for (let i = 0; i < 7; i++) {
+    ctx.fillStyle = COLORS[i];
+    ctx.beginPath(); ctx.arc(WIDTH / 2 - 30 + i * 10, 116, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  // The unicorn, its coat cycling through the spectrum it seeks
+  titleHorse.el = Math.floor(t / 550) % 7;
+  drawUnicornPixel(ctx, titleHorse, titleHorse.x, titleHorse.y);
+  // Start prompt (pulsing) + controls
+  ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t / 300);
+  ctx.fillStyle = '#e6e6ee';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('press any key to begin', WIDTH / 2, 230);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#83838f';
+  ctx.font = '9px monospace';
+  ctx.fillText('[<>] move    [^] jump    [X] skill    [C] swap colour', WIDTH / 2, 250);
+  ctx.textAlign = 'left';
+}
+
 function render(alpha) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#0a0a0a';
@@ -207,6 +253,9 @@ function render(alpha) {
     ctx.fillStyle = gg;
     ctx.fillRect(0, 0, WIDTH, HEIGHT * 0.7);
   }
+
+  // Title screen: name, a colour-cycling unicorn, and a start prompt.
+  if (!started) { drawTitle(); ctx.restore(); return; }
 
   // Camera: follow the player horizontally on wide stages (clamped; 0 elsewhere).
   const ipx = prevX + (player.x - prevX) * alpha;
@@ -375,6 +424,11 @@ function render(alpha) {
     ctx.fillText('THE WORLD IS PURIFIED', WIDTH / 2, HEIGHT / 2 - 6);
     ctx.font = '10px monospace';
     ctx.fillText('the last horn shines again', WIDTH / 2, HEIGHT / 2 + 12);
+    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+    ctx.fillStyle = '#e6e6ee';
+    ctx.font = '9px monospace';
+    ctx.fillText('press any key to play again', WIDTH / 2, HEIGHT / 2 + 30);
+    ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
   }
 
