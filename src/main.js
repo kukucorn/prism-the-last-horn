@@ -381,8 +381,8 @@ function render(alpha) {
   // --- Stage-clear purification wash --------------------------------------
   if (clearT > 0) {
     const k = 1 - Math.abs(clearT - HALF) / HALF; // 0 -> 1 -> 0
-    // colour floods from the goal outward
-    const gx = lv.goal ? lv.goal.x : WIDTH / 2, gy = lv.goal ? lv.goal.y : HEIGHT / 2;
+    // colour floods from the goal outward (goal is in world space -> subtract camera)
+    const gx = (lv.goal ? lv.goal.x : WIDTH / 2) - camX, gy = lv.goal ? lv.goal.y : HEIGHT / 2;
     const wash = ctx.createRadialGradient(gx, gy, 0, gx, gy, WIDTH * (0.2 + k));
     wash.addColorStop(0, COLORS[revealHue] + A(k * 0.9));
     wash.addColorStop(1, COLORS[revealHue] + '00');
