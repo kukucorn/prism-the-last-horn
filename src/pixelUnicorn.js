@@ -87,24 +87,28 @@ function buildGrid(frame) {
   return g;
 }
 
-// Bake a frame to an offscreen canvas tinted for element `el`.
-function bake(el, frame) {
-  const base = hex(COLORS[el]);
+// Bake a frame to an offscreen canvas tinted for element `el`. `desat` (0..1)
+// drains the coat and rainbow mane/tail toward grey — the unicorn fades as it
+// gives its colours back to the world. Ivory horn, hooves and eyes are exempt.
+function bake(el, frame, desat) {
+  const gy = (c) => { const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]; return mix(c, [l, l, l], desat); };
+  const base = gy(hex(COLORS[el]));
   const pal = { 1: rgb(base), 2: rgb(mul(base, 0.66)), 3: rgb(mix(base, W, 0.40)), 9: rgb(mul(base, 0.44)), 12: rgb(mix(base, W, 0.68)), 4: '#efe4c4', 8: '#c7bb93', 13: '#ffdf8f', 5: '#181820', 6: '#0c0c14', 7: '#1e1d25' };
-  const rdk = COLORS.map((h) => rgb(mul(hex(h), 0.5))), rlt = COLORS.map((h) => rgb(mix(hex(h), W, 0.55)));
+  const CS = COLORS.map((h) => gy(hex(h)));
+  const rmid = CS.map((c) => rgb(c)), rdk = CS.map((c) => rgb(mul(c, 0.5))), rlt = CS.map((c) => rgb(mix(c, W, 0.55)));
   const g = buildGrid(frame), cv = document.createElement('canvas'); cv.width = SW; cv.height = SH; const c = cv.getContext('2d');
-  for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) { const v = g[y][x]; if (!v) continue; c.fillStyle = v >= 40 ? rlt[(v - 40) % 7] : v >= 30 ? rdk[(v - 30) % 7] : v >= 20 ? COLORS[(v - 20) % 7] : pal[v]; c.fillRect(x, y, 1, 1); }
+  for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) { const v = g[y][x]; if (!v) continue; c.fillStyle = v >= 40 ? rlt[(v - 40) % 7] : v >= 30 ? rdk[(v - 30) % 7] : v >= 20 ? rmid[(v - 20) % 7] : pal[v]; c.fillRect(x, y, 1, 1); }
   return cv;
 }
 const cache = {};
-const frameFor = (el, frame) => cache[el + ':' + frame] || (cache[el + ':' + frame] = bake(el, frame));
+const frameFor = (el, frame, dq) => { const k = el + ':' + frame + ':' + dq; return cache[k] || (cache[k] = bake(el, frame, dq / 7)); };
 
 const DEST_W = 50, DEST_H = SH / SW * 50; // world-space blit size (~50 x 40)
-export function drawUnicornPixel(ctx, p, ix, iy) {
+export function drawUnicornPixel(ctx, p, ix, iy, desat = 0) {
   let frame = 0, bob = 0;
   if (!p.grounded) { frame = 5; bob = -2; }
   else if (Math.abs(p.vx) > 20) { const f = Math.floor(performance.now() / 70) % 4; frame = 1 + f; bob = [-3, 0, -3, 1][f]; }
-  const buf = frameFor(p.el, frame);
+  const buf = frameFor(p.el, frame, Math.max(0, Math.min(7, Math.round(desat * 7))));
   const feetY = iy + p.h, cx = ix + p.w / 2, s = DEST_W / SW;
   ctx.save();
   ctx.imageSmoothingEnabled = false;

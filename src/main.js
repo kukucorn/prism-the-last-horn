@@ -461,7 +461,9 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
-  drawUnicornPixel(ctx, player, x, y);
+  // The coat fades toward grey as colours are returned — nearly monochrome by
+  // the final chase, when the horn is all but empty.
+  drawUnicornPixel(ctx, player, x, y, Math.min(0.82, purified.length / 8));
 
   ctx.restore(); // end camera — overlays, chase wall and HUD are screen-space
 
