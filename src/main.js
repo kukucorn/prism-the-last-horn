@@ -50,7 +50,9 @@ let introT = 0;          // boss entrance sequence frames remaining (0 = fightin
 let camX = 0;            // horizontal camera offset (0 on single-screen stages)
 let lastCheck = null;    // last checkpoint passed on the chase runner
 let won = false;         // world fully purified (victory)
+let winT = 0;            // frames since victory (drives the ending timeline)
 let started = false;     // false = title screen; true = playing
+let openIdx = -1;        // >=0 while stepping the opening story cards
 
 // Contextual control tooltips: teach each stage's skill key on first arrival,
 // and the colour-swap key once it first matters (the boss duel).
@@ -66,6 +68,26 @@ const SKILL_HINT = [
 let skillUsed = false;   // player demonstrated this stage's skill (hides its hint)
 let swapUsed = false;    // player has swapped colour at least once (hides swap hint)
 let prevEl = 0;          // last frame's element, to detect a swap
+
+// --- Story ------------------------------------------------------------------
+// A creation myth: the world we live in comes AFTER this game. The unicorn is
+// the last light in a world not yet begun; it gives its seven colours away and
+// vanishes — which is why no one has ever seen it.
+const OPEN = [
+  ['BEFORE THE WORLD', 'there was only The Monochrome —', 'a silence that had never known colour.'],
+  ['THE LAST HORN', 'one unicorn walked that grey.', 'seven colours slept inside its horn.'],
+  ['', 'it went to give them all away.', ''],
+];
+// Spoken as each element is returned to the world (order matches NAMES).
+const LORE = [
+  'warmth — and so the first fire was lit',
+  'firmness — and so the mountains rose',
+  'brightness — and so the morning came',
+  'breath — and so the forests woke',
+  'flow — and so the rivers ran',
+  'stillness — and so the winter fell',
+  'pull — and so the stars kept their place',
+];
 
 const player = makePlayer(lv.spawn.x - 6, lv.spawn.y - 16);
 let prevX = player.x, prevY = player.y;
@@ -126,11 +148,17 @@ function onWin() {
 function reset() {
   lvi = 0; lv = loadLevel(0); purified.length = 0;
   clearT = 0; boss = null; introT = 0; camX = 0; lastCheck = null; won = false;
+  winT = 0; openIdx = -1;
   respawn(); syncElements();
 }
 
-// Title: any key begins; a key on the victory screen plays again.
-addEventListener('keydown', () => { if (!started) started = true; else if (won) { reset(); } });
+// Title -> opening story cards -> play. A key steps the opening; on the ending
+// (once its last card has settled) a key plays again.
+addEventListener('keydown', () => {
+  if (!started) { started = true; openIdx = 0; }        // begin the opening
+  else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; } // step / dismiss
+  else if (won && winT > 270) reset();                  // replay after the ending settles
+});
 
 // Dev-only inspection hook (stripped from the production build).
 if (import.meta.env.DEV) {
@@ -141,11 +169,11 @@ if (import.meta.env.DEV) {
 }
 
 function update() {
-  // Title screen: freeze until the player presses a key.
-  if (!started) return;
+  // Title screen / opening story: freeze until the player steps through.
+  if (!started || openIdx >= 0) return;
 
-  // Victory: freeze play (the unicorn idles via its own animation clock).
-  if (won) return;
+  // Victory: freeze play and run the ending timeline (the unicorn idles on).
+  if (won) { winT++; return; }
 
   // Stage-clear transition: freeze play, swap stage at the midpoint.
   if (clearT > 0) {
@@ -227,6 +255,25 @@ function drawTitle() {
   ctx.textAlign = 'left';
 }
 
+// A full-screen story card: a dim wash, a violet heading, two lines, and an
+// optional pulsing key prompt. Used for the opening and the ending's last beat.
+function drawStory(card, prompt) {
+  ctx.fillStyle = '#07070a' + 'e6';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.textAlign = 'center';
+  if (card[0]) { ctx.fillStyle = '#b45cff'; ctx.font = 'bold 18px monospace'; ctx.fillText(card[0], WIDTH / 2, HEIGHT / 2 - 24); }
+  ctx.fillStyle = '#e6e6ee'; ctx.font = '11px monospace';
+  ctx.fillText(card[1], WIDTH / 2, HEIGHT / 2 + 2);
+  if (card[2]) ctx.fillText(card[2], WIDTH / 2, HEIGHT / 2 + 20);
+  if (prompt) {
+    ctx.globalAlpha = 0.4 + 0.4 * Math.sin(performance.now() / 300);
+    ctx.fillStyle = '#83838f'; ctx.font = '9px monospace';
+    ctx.fillText('press any key', WIDTH / 2, HEIGHT - 30);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textAlign = 'left';
+}
+
 function render(alpha) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#0a0a0a';
@@ -258,6 +305,9 @@ function render(alpha) {
 
   // Title screen: name, a colour-cycling unicorn, and a start prompt.
   if (!started) { drawTitle(); ctx.restore(); return; }
+
+  // Opening story: myth setup over the monochrome void, stepped by any key.
+  if (openIdx >= 0) { drawStory(OPEN[openIdx], true); ctx.restore(); return; }
 
   // Camera: follow the player horizontally on wide stages (clamped; 0 elsewhere).
   const ipx = prevX + (player.x - prevX) * alpha;
@@ -430,28 +480,36 @@ function render(alpha) {
     ctx.fillText('THE MONOCHROME', WIDTH / 2, HEIGHT / 2 - 6);
     ctx.fillStyle = '#9a9aa8';
     ctx.font = '9px monospace';
-    ctx.fillText('it drained the world of colour', WIDTH / 2, HEIGHT / 2 + 12);
-    ctx.fillText('give it back', WIDTH / 2, HEIGHT / 2 + 26);
+    ctx.fillText('the silence comes to take the last horn back', WIDTH / 2, HEIGHT / 2 + 12);
+    ctx.fillText('run — carry the final colour to the world\'s edge', WIDTH / 2, HEIGHT / 2 + 26);
     ctx.textAlign = 'left';
     ctx.globalAlpha = 1;
   }
 
-  // Victory: the world blooms into full colour.
+  // Victory — the ending myth. The horn breaks in a prism burst, the grey
+  // shatters into colour, then the reveal: our bright world begins only once
+  // the unicorn is spent and gone.
   if (won) {
-    ctx.globalAlpha = 0.22;
+    const k = Math.min(1, winT / 90);
+    ctx.globalAlpha = 0.30 * k;                          // rainbow bloom ramping in
     for (let i = 0; i < 7; i++) { ctx.fillStyle = COLORS[i]; ctx.fillRect(0, HEIGHT * i / 7, WIDTH, HEIGHT / 7 + 1); }
+    ctx.globalAlpha = Math.max(0, 1 - winT / 40) * 0.85; // white prism flash as the horn breaks
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 16px monospace';
-    ctx.fillText('THE WORLD IS PURIFIED', WIDTH / 2, HEIGHT / 2 - 6);
-    ctx.font = '10px monospace';
-    ctx.fillText('the last horn shines again', WIDTH / 2, HEIGHT / 2 + 12);
-    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 300);
-    ctx.fillStyle = '#e6e6ee';
-    ctx.font = '9px monospace';
-    ctx.fillText('press any key to play again', WIDTH / 2, HEIGHT / 2 + 30);
-    ctx.globalAlpha = 1;
+    if (winT < 270) {                                    // two settling captions
+      ctx.globalAlpha = Math.min(1, winT / 30);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 15px monospace';
+      ctx.fillText(winT < 130 ? 'THE LAST COLOUR LEFT THE HORN' : 'THE GREY BROKE INTO EVERY HUE', WIDTH / 2, HEIGHT / 2);
+      ctx.globalAlpha = 1;
+    } else {                                             // the reveal + replay prompt
+      drawStory(['', 'no one ever saw the unicorn —', 'by the time our eyes knew colour, it was gone.'], false);
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = 0.4 + 0.4 * Math.sin(performance.now() / 300);
+      ctx.fillStyle = '#83838f'; ctx.font = '9px monospace';
+      ctx.fillText('press any key to play again', WIDTH / 2, HEIGHT - 30);
+      ctx.globalAlpha = 1;
+    }
     ctx.textAlign = 'left';
   }
 
@@ -473,9 +531,9 @@ function render(alpha) {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(NAMES[revealHue] + ' PURIFIED', WIDTH / 2, HEIGHT / 2 - 8);
-    ctx.font = '9px monospace';
-    ctx.fillText('STAGE ' + (lvi + 1), WIDTH / 2, HEIGHT / 2 + 8);
+    ctx.fillText(NAMES[revealHue] + ' RETURNED', WIDTH / 2, HEIGHT / 2 - 8);
+    ctx.font = '10px monospace';
+    ctx.fillText(LORE[revealHue], WIDTH / 2, HEIGHT / 2 + 10);
     ctx.textAlign = 'left';
     ctx.globalAlpha = 1;
   }
@@ -498,23 +556,26 @@ function render(alpha) {
     }
   }
 
-  // HUD.
-  ctx.fillStyle = COLORS[player.el];
-  ctx.font = '10px monospace';
-  ctx.fillText('PRISM — THE LAST HORN', 8, 14);
-  ctx.fillStyle = '#888';
-  if (boss) ctx.fillText('THE MONOCHROME   OUTRUN IT — reach the light', 8, 26);
-  else ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
-  ctx.fillText('element: ' + NAMES[player.el] + '   [C] swap   [<>] move   [^] jump   [X] skill', 8, HEIGHT - 8);
+  // HUD (hidden during the clear wash and the ending so their story text
+  // stands alone on screen).
+  if (!won && clearT === 0) {
+    ctx.fillStyle = COLORS[player.el];
+    ctx.font = '10px monospace';
+    ctx.fillText('PRISM — THE LAST HORN', 8, 14);
+    ctx.fillStyle = '#888';
+    if (boss) ctx.fillText('THE MONOCHROME   OUTRUN IT — reach the light', 8, 26);
+    else ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
+    ctx.fillText('element: ' + NAMES[player.el] + '   [C] swap   [<>] move   [^] jump   [X] skill', 8, HEIGHT - 8);
 
-  // Skill-cooldown gauge (Fire/Earth/Light have real cooldowns now).
-  const ready = player.cd <= 0 && player.dashT === 0 && !player.slam;
-  const gx = WIDTH - 66;
-  ctx.fillStyle = '#777'; ctx.font = '8px monospace';
-  ctx.fillText('SKILL', gx - 30, 14);
-  ctx.fillStyle = '#2a2a2a'; ctx.fillRect(gx, 8, 58, 5);
-  ctx.fillStyle = ready ? COLORS[player.el] : '#b55';
-  ctx.fillRect(gx, 8, 58 * (ready ? 1 : 1 - Math.min(1, player.cd / 48)), 5);
+    // Skill-cooldown gauge (Fire/Earth/Light have real cooldowns now).
+    const ready = player.cd <= 0 && player.dashT === 0 && !player.slam;
+    const gx = WIDTH - 66;
+    ctx.fillStyle = '#777'; ctx.font = '8px monospace';
+    ctx.fillText('SKILL', gx - 30, 14);
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(gx, 8, 58, 5);
+    ctx.fillStyle = ready ? COLORS[player.el] : '#b55';
+    ctx.fillRect(gx, 8, 58 * (ready ? 1 : 1 - Math.min(1, player.cd / 48)), 5);
+  }
 
   ctx.restore();
 }
