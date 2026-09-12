@@ -109,8 +109,9 @@ export const S_JUMP = 0, S_LAND = 1, S_DASH = 2, S_SLAM = 3, S_BLINK = 4,
 // filter that drifts under a very slow LFO, morphing between two gentle chords.
 // Near-zero bytes, no sample data — just a quiet bed under the SFX.
 let bgm = false;
-// Two calm chords (Hz): A-minor-ish -> F-ish. Voices glide between them.
-const CHORDS = [[110, 164.81, 246.94], [87.31, 130.81, 220]];
+// Two bright major chords (Hz): C major <-> F major, up in a warm register and
+// sharing C4 so the voices glide smoothly. Hopeful rather than sombre.
+const CHORDS = [[196.00, 261.63, 329.63], [174.61, 261.63, 349.23]];
 export function startBgm() {
   if (!zzfxX || bgm) return;
   bgm = true;
@@ -119,7 +120,7 @@ export function startBgm() {
   out.gain.value = 0;
   out.gain.linearRampToValueAtTime(0.12, t + 5);   // slow fade-in
   const lp = zzfxX.createBiquadFilter();
-  lp.type = 'lowpass'; lp.frequency.value = 620; lp.Q.value = 0.6;
+  lp.type = 'lowpass'; lp.frequency.value = 1050; lp.Q.value = 0.6; // higher cutoff = brighter
   out.connect(lp); lp.connect(zzfxX.destination);
 
   const voices = CHORDS[0].map((f, i) => {
@@ -134,7 +135,7 @@ export function startBgm() {
 
   // slow filter LFO for gentle movement
   const lfo = zzfxX.createOscillator(); lfo.frequency.value = 0.05;
-  const lfoG = zzfxX.createGain(); lfoG.gain.value = 220;
+  const lfoG = zzfxX.createGain(); lfoG.gain.value = 320;   // drifts ~730-1370 Hz, gentle shimmer
   lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start(t);
 
   // morph between the two chords every ~12s
