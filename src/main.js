@@ -54,6 +54,7 @@ let winT = 0;            // frames since victory (drives the ending timeline)
 let started = false;     // false = title screen; true = playing
 let openIdx = -1;        // >=0 while stepping the opening story cards
 let beaten = false;      // the world has been coloured once -> title blooms
+let dead = false;        // awaiting Continue after a death (freeze until a key)
 
 // Contextual control tooltips: teach each stage's skill key on first arrival,
 // and the colour-swap key once it first matters (the boss duel).
@@ -139,6 +140,13 @@ function respawnChase() {
   snd(S_HURT);
 }
 
+// Death: reposition (checkpoint on the chase, spawn otherwise) and freeze on a
+// Continue prompt until the player presses a key. Both respawns cue S_HURT.
+function die() {
+  dead = true;
+  if (boss) respawnChase(); else { snd(S_HURT); respawn(); }
+}
+
 // Boss purified: the world is whole again.
 function onWin() {
   won = true;
@@ -158,7 +166,8 @@ function reset() {
 // Title -> opening story cards -> play. A key steps the opening; on the ending
 // (once its last card has settled) a key returns to the now-colour title.
 addEventListener('keydown', () => {
-  if (!started) { started = true; openIdx = 0; snd(S_STEP); } // begin the opening
+  if (dead) { dead = false; }                             // Continue: move to revive
+  else if (!started) { started = true; openIdx = 0; snd(S_STEP); } // begin the opening
   else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; snd(S_STEP); } // step / dismiss
   else if (won && winT > 270) { reset(); started = false; } // ending -> colour title
 });
@@ -189,6 +198,9 @@ function update() {
   // Boss entrance: freeze play while the Monochrome looms and is named.
   if (introT > 0) { introT--; return; }
 
+  // Death: hold on the Continue prompt until the player presses a key.
+  if (dead) return;
+
   prevX = player.x;
   prevY = player.y;
   player.inWater = lv.water.some((w) => overlap(player, w)); // gates Water's float
@@ -211,13 +223,14 @@ function update() {
       else if (!player.inv) died = true;
     }
   }
-  if (died) { if (boss) respawnChase(); else { snd(S_HURT); respawn(); } }
+  if (died) { die(); return; }            // -> Continue prompt
 
   if (boss) {
     // Chase runner: record checkpoints, advance the wall, win at the far light.
     const cx = player.x + player.w / 2;
     for (const c of lv.checks) if (cx > c.x && (!lastCheck || c.x > lastCheck.x)) lastCheck = c;
-    updateBoss(boss, player, respawnChase);
+    updateBoss(boss, player, die);        // caught -> Continue prompt
+    if (dead) return;
     if (lv.goal && overlap(player, lv.goal)) onWin();
   } else if (lv.goal && overlap(player, lv.goal)) {
     startClear();                          // reached the goal -> purify + advance
@@ -480,6 +493,18 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
+  // Element aura: a soft halo in the current element's colour, so the faded
+  // coat's active element (which drives the skill) always reads at a glance.
+  {
+    const acx = x + player.w / 2, acy = y + player.h - 16, col = COLORS[player.el];
+    const halo = ctx.createRadialGradient(acx, acy, 6, acx, acy, 30);
+    halo.addColorStop(0, col + '00');
+    halo.addColorStop(0.55, col + (player.el === INDIGO ? '5a' : '4d'));
+    halo.addColorStop(1, col + '00');
+    ctx.fillStyle = halo;
+    ctx.fillRect(acx - 34, acy - 34, 68, 68);
+  }
+
   // The coat fades toward grey as colours are returned — nearly monochrome by
   // the final chase, when the horn is all but empty.
   drawUnicornPixel(ctx, player, x, y, Math.min(0.82, purified.length / 8));
@@ -561,7 +586,7 @@ function render(alpha) {
 
   // Contextual control tooltip (only during active play): teach the stage's
   // skill key, or the colour-swap key once the boss makes it matter.
-  if (clearT === 0 && !won) {
+  if (clearT === 0 && !won && !dead) {
     let tip = null, col = '#fff';
     if (boss && !swapUsed) { tip = 'RUN! swap [C] to each section\'s skill and use [X]'; col = COLORS[player.el]; }
     else if (!boss && !skillUsed) { tip = SKILL_HINT[lvi % 7]; col = COLORS[lvi % 7]; }
@@ -577,16 +602,38 @@ function render(alpha) {
     }
   }
 
+  // Death: a calm Continue prompt. Play resumes the moment a key is pressed.
+  if (dead) {
+    ctx.fillStyle = '#05050a' + A(0.62);
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS[player.el];
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('CONTINUE?', WIDTH / 2, HEIGHT / 2 - 4);
+    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+    ctx.fillStyle = '#e6e6ee';
+    ctx.font = '10px monospace';
+    ctx.fillText('press any key to move on', WIDTH / 2, HEIGHT / 2 + 18);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
   // HUD (hidden during the clear wash and the ending so their story text
   // stands alone on screen).
-  if (!won && clearT === 0) {
+  if (!won && clearT === 0 && !dead) {
     ctx.fillStyle = COLORS[player.el];
     ctx.font = '10px monospace';
     ctx.fillText('PRISM — THE LAST HORN', 8, 14);
     ctx.fillStyle = '#888';
     if (boss) ctx.fillText('THE MONOCHROME   OUTRUN IT — reach the light', 8, 26);
     else ctx.fillText('STAGE ' + (lvi + 1) + '/' + LEVEL_COUNT + '   purified ' + purified.length + '/7', 8, 26);
-    ctx.fillText('element: ' + NAMES[player.el] + '   [C] swap   [<>] move   [^] jump   [X] skill', 8, HEIGHT - 8);
+    // "element: NAME" — the NAME in its own colour so the active element reads.
+    ctx.fillText('element: ', 8, HEIGHT - 8);
+    const ex = 8 + ctx.measureText('element: ').width;
+    ctx.fillStyle = COLORS[player.el];
+    ctx.fillText(NAMES[player.el], ex, HEIGHT - 8);
+    ctx.fillStyle = '#888';
+    ctx.fillText('   [C] swap   [<>] move   [^] jump   [X] skill', ex + ctx.measureText(NAMES[player.el]).width, HEIGHT - 8);
 
     // Skill-cooldown gauge (Fire/Earth/Light have real cooldowns now).
     const ready = player.cd <= 0 && player.dashT === 0 && !player.slam;
