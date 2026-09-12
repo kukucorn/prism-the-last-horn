@@ -142,8 +142,13 @@ function respawnChase() {
 
 // Death: reposition (checkpoint on the chase, spawn otherwise) and freeze on a
 // Continue prompt until the player presses a key. Both respawns cue S_HURT.
+// Reload the level so every obstacle returns to its initial state — Ice-frozen
+// spikes thaw, moving blades reset, broken rocks return — closing the exploit
+// where you freeze a trap, die on purpose, and walk through it unpunished.
 function die() {
   dead = true;
+  lv = loadLevel(lvi);
+  if (import.meta.env.DEV) window.LV = lv;
   if (boss) respawnChase(); else { snd(S_HURT); respawn(); }
 }
 
@@ -180,7 +185,7 @@ if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
   window.stage = () => ({ lvi, clearT, purified: [...purified], bossHp: boss && boss.hp, won });
   window.getBoss = () => boss;
-  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; };
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; dead = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; };
 }
 
 function update() {
