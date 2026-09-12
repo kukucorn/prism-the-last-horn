@@ -165,8 +165,11 @@ function reset() {
 
 // Title -> opening story cards -> play. A key steps the opening; on the ending
 // (once its last card has settled) a key returns to the now-colour title.
-addEventListener('keydown', () => {
-  if (dead) { dead = false; }                             // Continue: move to revive
+// Ignore auto-repeat (held-key) events: every transition here wants a fresh
+// press, so on Continue you must release and press again to revive.
+addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (dead) { dead = false; }                             // Continue: release+press to revive
   else if (!started) { started = true; openIdx = 0; snd(S_STEP); } // begin the opening
   else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; snd(S_STEP); } // step / dismiss
   else if (won && winT > 270) { reset(); started = false; } // ending -> colour title
