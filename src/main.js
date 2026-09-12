@@ -9,7 +9,7 @@ import { makePlayer, updatePlayer } from './player.js';
 import { loadLevel, LEVEL_COUNT } from './level.js';
 import { overlap } from './physics.js';
 import { drawUnicornPixel } from './pixelUnicorn.js';
-import { snd, S_HURT, S_FREEZE, S_GOAL } from './sfx.js';
+import { snd, S_HURT, S_FREEZE, S_GOAL, S_STEP, S_OMEN, S_PRISM, S_REVEAL } from './sfx.js';
 import { makeBoss, updateBoss, drawBoss } from './boss.js';
 
 const WIDTH = 480, HEIGHT = 270;
@@ -125,6 +125,7 @@ function advance() {
   boss = lvi === BOSS_STAGE ? makeBoss() : null;
   introT = boss ? INTRO_DUR : 0;
   lastCheck = boss ? lv.spawn : null;
+  if (boss) snd(S_OMEN);            // the Monochrome looms
   if (import.meta.env.DEV) window.LV = lv;
 }
 
@@ -143,7 +144,7 @@ function onWin() {
   won = true;
   beaten = true;              // the title will now bloom into full colour
   for (let i = 0; i < 7; i++) if (!purified.includes(i)) purified.push(i);
-  snd(S_GOAL);
+  snd(S_PRISM);               // the horn breaks — a rising shimmer of colour
 }
 
 // Restart from stage 1 (used by "play again" after victory).
@@ -157,8 +158,8 @@ function reset() {
 // Title -> opening story cards -> play. A key steps the opening; on the ending
 // (once its last card has settled) a key returns to the now-colour title.
 addEventListener('keydown', () => {
-  if (!started) { started = true; openIdx = 0; }        // begin the opening
-  else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; } // step / dismiss
+  if (!started) { started = true; openIdx = 0; snd(S_STEP); } // begin the opening
+  else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; snd(S_STEP); } // step / dismiss
   else if (won && winT > 270) { reset(); started = false; } // ending -> colour title
 });
 
@@ -175,7 +176,8 @@ function update() {
   if (!started || openIdx >= 0) return;
 
   // Victory: freeze play and run the ending timeline (the unicorn idles on).
-  if (won) { winT++; return; }
+  // Cue the grey breaking into colour, then the quiet reveal.
+  if (won) { winT++; if (winT === 130) snd(S_GOAL); else if (winT === 270) snd(S_REVEAL); return; }
 
   // Stage-clear transition: freeze play, swap stage at the midpoint.
   if (clearT > 0) {

@@ -83,6 +83,10 @@ const P = [
   [.7, , 520, , .04, .1, , 1.5, , , 220, .02],          // 8 DJUMP light double-jump blip
   [.8, , 180, .02, .1, .22, 2, 1, , , , , , .25, , .1], // 9 GRAV  warp
   [.7, .25, 1300, , .05, .16, 4, 1, , , , , , .5],      // 10 FREEZE crackle
+  [.4, , 500, , .01, .06, , 1],                          // 11 STEP  soft page tick (story cards)
+  [1.1, , 120, .1, .4, .6, , .5, -6, , , , , .2, , .1, , .6, , .1], // 12 OMEN Monochrome drone
+  [1.4, .05, 330, .05, .35, .7, , 1.6, 50, , 300, .08, , , , , , , , .15], // 13 PRISM rising shimmer
+  [.55, , 174, .2, .3, .8, , .6, , , , , , , , , , .6],  // 14 REVEAL low, melancholic
 ];
 
 // Play a sound by index (see the constants below). Never throws — bad audio
@@ -93,4 +97,5 @@ export function snd(i) {
 }
 
 export const S_JUMP = 0, S_LAND = 1, S_DASH = 2, S_SLAM = 3, S_BLINK = 4,
-  S_SWAP = 5, S_HURT = 6, S_GOAL = 7, S_DJUMP = 8, S_GRAV = 9, S_FREEZE = 10;
+  S_SWAP = 5, S_HURT = 6, S_GOAL = 7, S_DJUMP = 8, S_GRAV = 9, S_FREEZE = 10,
+  S_STEP = 11, S_OMEN = 12, S_PRISM = 13, S_REVEAL = 14;
