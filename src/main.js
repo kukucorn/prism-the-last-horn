@@ -60,16 +60,22 @@ let dead = false;        // awaiting Continue after a death (freeze until a key)
 // and the colour-swap key once it first matters (the boss duel).
 const SKILL_HINT = [
   'press [X] to DASH across the spikes',
-  'press [X] in the air to SLAM through rock',
+  'JUMP, then press [X] in the air to SLAM through rock',
   'press [X] to BLINK through the walls',
   'press [X] in the air to DOUBLE-JUMP the gaps',
-  'hold [X] to FLOAT up the shaft',
-  'walk through as ICE — spikes FREEZE on touch',
-  'press [X] to FLIP gravity and walk the ceiling',
+  'hold [X] while swimming to FLOAT — only works in water',
+  'walk through as ICE — spikes FREEZE on touch, no button needed',
+  'press [X] anytime to FLIP gravity — floor and ceiling swap',
 ];
 let skillUsed = false;   // player demonstrated this stage's skill (hides its hint)
 let swapUsed = false;    // player has swapped colour at least once (hides swap hint)
 let prevEl = 0;          // last frame's element, to detect a swap
+
+// Full-screen skill tip: freezes play once per stage on first arrival, so a
+// new mechanic (e.g. Earth's jump-then-slam) is explained before you're
+// expected to use it, instead of only a small pulsing reminder mid-run.
+let showTip = false;
+const tipSeen = [0, 0, 0, 0, 0, 0, 0];
 
 // --- Story ------------------------------------------------------------------
 // A creation myth: the world we live in comes AFTER this game. The unicorn is
@@ -104,6 +110,12 @@ function syncElements() {
 }
 syncElements();
 
+// Show the full-screen tip once per stage, the first time it's entered.
+function maybeShowTip() {
+  if (!boss && !tipSeen[lvi]) { tipSeen[lvi] = 1; showTip = true; }
+}
+maybeShowTip();
+
 function respawn() {
   player.x = lv.spawn.x - 6; player.y = lv.spawn.y - 16;
   player.vx = player.vy = 0;
@@ -127,6 +139,7 @@ function advance() {
   introT = boss ? INTRO_DUR : 0;
   lastCheck = boss ? lv.spawn : null;
   if (boss) snd(S_OMEN);            // the Monochrome looms
+  maybeShowTip();
   if (import.meta.env.DEV) window.LV = lv;
 }
 
@@ -169,8 +182,8 @@ function onWin() {
 function reset() {
   lvi = 0; lv = loadLevel(0); purified.length = 0;
   clearT = 0; boss = null; introT = 0; camX = 0; lastCheck = null; won = false;
-  winT = 0; openIdx = -1;
-  respawn(); syncElements();
+  winT = 0; openIdx = -1; tipSeen.fill(0);
+  respawn(); syncElements(); maybeShowTip();
 }
 
 // Title -> opening story cards -> play. A key steps the opening; on the ending
@@ -182,6 +195,7 @@ addEventListener('keydown', (e) => {
   if (dead) { revive(); }                                 // Continue: release+press to revive
   else if (!started) { started = true; openIdx = 0; snd(S_STEP); } // begin the opening
   else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; snd(S_STEP); } // step / dismiss
+  else if (showTip) { showTip = false; snd(S_STEP); }       // dismiss the skill tip -> begin
   else if (won && winT > 270) { reset(); started = false; } // ending -> colour title
 });
 
@@ -190,7 +204,7 @@ if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
   window.stage = () => ({ lvi, clearT, purified: [...purified], bossHp: boss && boss.hp, won });
   window.getBoss = () => boss;
-  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; dead = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; };
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; dead = false; showTip = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; };
 }
 
 function update() {
@@ -210,6 +224,9 @@ function update() {
 
   // Boss entrance: freeze play while the Monochrome looms and is named.
   if (introT > 0) { introT--; return; }
+
+  // Skill tip: freeze on the explanation until the player presses a key.
+  if (showTip) return;
 
   // Death: hold on the Continue prompt until the player presses a key.
   if (dead) return;
@@ -545,6 +562,25 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
+  // Skill tip: a full-screen pause (once per stage) spelling out exactly how
+  // the new skill works — e.g. Earth needs a jump BEFORE the slam key, which
+  // a small pulsing reminder mid-run was too easy to miss.
+  if (showTip) {
+    const col = COLORS[lvi % 7];
+    ctx.fillStyle = '#07070a' + 'e6';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = col; ctx.font = 'bold 18px monospace';
+    ctx.fillText(NAMES[lvi % 7] + ' AWAKENS', WIDTH / 2, HEIGHT / 2 - 26);
+    ctx.fillStyle = '#e6e6ee'; ctx.font = '11px monospace';
+    ctx.fillText(SKILL_HINT[lvi % 7], WIDTH / 2, HEIGHT / 2);
+    ctx.globalAlpha = 0.4 + 0.4 * Math.sin(performance.now() / 300);
+    ctx.fillStyle = '#83838f'; ctx.font = '9px monospace';
+    ctx.fillText('press any key to begin', WIDTH / 2, HEIGHT / 2 + 26);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
   // Victory — the ending myth. The horn breaks in a prism burst, the grey
   // shatters into colour, then the reveal: our bright world begins only once
   // the unicorn is spent and gone.
@@ -599,7 +635,7 @@ function render(alpha) {
 
   // Contextual control tooltip (only during active play): teach the stage's
   // skill key, or the colour-swap key once the boss makes it matter.
-  if (clearT === 0 && !won && !dead) {
+  if (clearT === 0 && !won && !dead && !showTip) {
     let tip = null, col = '#fff';
     if (boss && !swapUsed) { tip = 'RUN! swap [C] to each section\'s skill and use [X]'; col = COLORS[player.el]; }
     else if (!boss && !skillUsed) { tip = SKILL_HINT[lvi % 7]; col = COLORS[lvi % 7]; }
@@ -631,9 +667,9 @@ function render(alpha) {
     ctx.textAlign = 'left';
   }
 
-  // HUD (hidden during the clear wash and the ending so their story text
-  // stands alone on screen).
-  if (!won && clearT === 0 && !dead) {
+  // HUD (hidden during the clear wash, the skill tip and the ending so their
+  // story text stands alone on screen).
+  if (!won && clearT === 0 && !dead && !showTip) {
     ctx.fillStyle = COLORS[player.el];
     ctx.font = '10px monospace';
     ctx.fillText('PRISM — THE LAST HORN', 8, 14);
