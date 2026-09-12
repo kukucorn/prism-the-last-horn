@@ -137,19 +137,24 @@ function respawnChase() {
   player.vx = player.vy = 0; player.gflip = 1;
   prevX = player.x; prevY = player.y;
   if (boss) { boss.x = c.x - 130; boss.sp = boss.sp0; }
+}
+
+// Death: freeze on the Continue prompt with the unicorn left exactly where it
+// hit the obstacle. Nothing is moved or reset yet — that waits for revive().
+function die() {
+  dead = true;
   snd(S_HURT);
 }
 
-// Death: reposition (checkpoint on the chase, spawn otherwise) and freeze on a
-// Continue prompt until the player presses a key. Both respawns cue S_HURT.
-// Reload the level so every obstacle returns to its initial state — Ice-frozen
-// spikes thaw, moving blades reset, broken rocks return — closing the exploit
-// where you freeze a trap, die on purpose, and walk through it unpunished.
-function die() {
-  dead = true;
+// Continue: the player pressed a key. Now reload the level so every obstacle
+// returns to its initial state (Ice-frozen spikes thaw, blades reset, rocks
+// return — closing the freeze-then-die exploit) and reposition to the checkpoint
+// on the chase, or the spawn otherwise.
+function revive() {
   lv = loadLevel(lvi);
   if (import.meta.env.DEV) window.LV = lv;
-  if (boss) respawnChase(); else { snd(S_HURT); respawn(); }
+  if (boss) respawnChase(); else respawn();
+  dead = false;
 }
 
 // Boss purified: the world is whole again.
@@ -174,7 +179,7 @@ function reset() {
 // press, so on Continue you must release and press again to revive.
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
-  if (dead) { dead = false; }                             // Continue: release+press to revive
+  if (dead) { revive(); }                                 // Continue: release+press to revive
   else if (!started) { started = true; openIdx = 0; snd(S_STEP); } // begin the opening
   else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; snd(S_STEP); } // step / dismiss
   else if (won && winT > 270) { reset(); started = false; } // ending -> colour title
