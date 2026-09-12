@@ -109,24 +109,24 @@ const LEVELS = [
   [ // stage 5 (WATER — up, across, swim-across, up, drop)
     '##########################################################',
     '#................................................G.......#',
-    '#.......#wwwww#########...................wwww#######....#',
-    '#.......#wwwww.........wwwwwwwwwwwwwwwwww.wwww...........#',
-    '#.......#wwwww#........wwwww^wwwwwwwwwwww.wwww...........#',
-    '#.......#wwwww#........wwwwwwwwwwwwwwwwww.wwww...........#',
+    '#.......#wwwww............................wwww...........#',
+    '#.......#wwwww.........wwwww^wwwwwwwwwwww.wwww############',
+    '#.......#wwwww#########wwwww^wwwwwwwwwwww.wwww...........#',
     '#.......#wwwww#........wwwwwwwwwww^wwwwww.wwww...........#',
-    '#.......#www^w#........wwwwwwwwwwwwwwwwww.wwww...........#',
+    '#.......#wwwww#........wwwwwwwwwww^wwwwww.wwww...........#',
+    '#.......#www^^#........wwwwwwwwwww^wwwwww.wwww...........#',
+    '#.......#wwwww#........#######################...........#',
     '#.......#wwwww#..........................................#',
     '#.......#wwwww#..........................................#',
     '#.......#wwwww#..........................................#',
     '#.......#wwwww#..........................................#',
-    '#.......#wwwww#..........................................#',
-    '#.......#w^www#..........................................#',
-    '#.......#wwwww#..........................................#',
+    '#.......#^^www#..........................................#',
     '#.......#wwwww#..........................................#',
     '#.......#wwwww#..........................................#',
     '#.......#wwwww#..........................................#',
     '#.......#wwwww#..........................................#',
-    '#.S.....#wwwww#..........................................#',
+    '#........wwwww#..........................................#',
+    '#.S......wwwww#..........................................#',
     '#####################....................................#',
     '##########################################################',
   ],
@@ -226,6 +226,12 @@ export function parseLevel(rows, tile) {
         rocks.push({ x: x * tile, y: y * tile, w: tile, h: tile });
       } else if (c === '^') {
         hazards.push({ x: x * tile, y: y * tile, w: tile, h: tile });
+        // A spike embedded in a water row (flanked by 'w') is still swimmable
+        // water underneath — otherwise the tile it occupies isn't water at
+        // all, and floating up to exactly that height flickers in and out of
+        // the water zone forever without ever fully overlapping the spike:
+        // a stuck oscillation that neither dies nor lets you pass.
+        if (row[x - 1] === 'w' || row[x + 1] === 'w') water.push({ x: x * tile, y: y * tile, w: tile, h: tile });
       } else if (c === '~') {
         // Moving blade: the run of '~' is the patrol track; one blade sweeps it.
         let w = 1;
