@@ -2,13 +2,17 @@
 // every effect is generated from a parameter array at play time. We keep the
 // canonical micro synth and add a small preset table + play helper.
 
-const zzfxV = 0.3;                          // master volume
+const zzfxV = 0.22;                         // master SFX volume (sits under the BGM pad)
 const zzfxR = 44100;                        // sample rate
 const AC = window.AudioContext || window.webkitAudioContext;
 const zzfxX = AC ? new AC() : null;
 
-// Browsers start the context suspended until a user gesture; resume on first key.
-addEventListener('keydown', () => { if (zzfxX && zzfxX.state !== 'running') zzfxX.resume(); });
+// Browsers start the context suspended until a user gesture; resume on first key
+// and bring the ambient pad in with it.
+addEventListener('keydown', () => {
+  if (zzfxX && zzfxX.state !== 'running') zzfxX.resume();
+  startBgm();
+});
 
 function zzfxP(...samples) {
   const buffer = zzfxX.createBuffer(samples.length, samples[0].length, zzfxR);
@@ -99,3 +103,44 @@ export function snd(i) {
 export const S_JUMP = 0, S_LAND = 1, S_DASH = 2, S_SLAM = 3, S_BLINK = 4,
   S_SWAP = 5, S_HURT = 6, S_GOAL = 7, S_DJUMP = 8, S_GRAV = 9, S_FREEZE = 10,
   S_STEP = 11, S_OMEN = 12, S_PRISM = 13, S_REVEAL = 14;
+
+// --- Ambient BGM ------------------------------------------------------------
+// A calm oscillator pad: three soft voices form a chord, warmed by a lowpass
+// filter that drifts under a very slow LFO, morphing between two gentle chords.
+// Near-zero bytes, no sample data — just a quiet bed under the SFX.
+let bgm = false;
+// Two calm chords (Hz): A-minor-ish -> F-ish. Voices glide between them.
+const CHORDS = [[110, 164.81, 246.94], [87.31, 130.81, 220]];
+export function startBgm() {
+  if (!zzfxX || bgm) return;
+  bgm = true;
+  const t = zzfxX.currentTime;
+  const out = zzfxX.createGain();
+  out.gain.value = 0;
+  out.gain.linearRampToValueAtTime(0.12, t + 5);   // slow fade-in
+  const lp = zzfxX.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 620; lp.Q.value = 0.6;
+  out.connect(lp); lp.connect(zzfxX.destination);
+
+  const voices = CHORDS[0].map((f, i) => {
+    const o = zzfxX.createOscillator();
+    o.type = i ? 'sine' : 'triangle';
+    o.frequency.value = f;
+    o.detune.value = (i - 1) * 5;                   // slight width
+    const g = zzfxX.createGain(); g.gain.value = 0.33;
+    o.connect(g); g.connect(out); o.start(t);
+    return o;
+  });
+
+  // slow filter LFO for gentle movement
+  const lfo = zzfxX.createOscillator(); lfo.frequency.value = 0.05;
+  const lfoG = zzfxX.createGain(); lfoG.gain.value = 220;
+  lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start(t);
+
+  // morph between the two chords every ~12s
+  let ci = 1;
+  setInterval(() => {
+    const c = CHORDS[ci++ % CHORDS.length], now = zzfxX.currentTime;
+    voices.forEach((o, i) => o.frequency.setTargetAtTime(c[i], now, 3));
+  }, 12000);
+}
