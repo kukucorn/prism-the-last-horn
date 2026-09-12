@@ -53,6 +53,7 @@ let won = false;         // world fully purified (victory)
 let winT = 0;            // frames since victory (drives the ending timeline)
 let started = false;     // false = title screen; true = playing
 let openIdx = -1;        // >=0 while stepping the opening story cards
+let beaten = false;      // the world has been coloured once -> title blooms
 
 // Contextual control tooltips: teach each stage's skill key on first arrival,
 // and the colour-swap key once it first matters (the boss duel).
@@ -140,6 +141,7 @@ function respawnChase() {
 // Boss purified: the world is whole again.
 function onWin() {
   won = true;
+  beaten = true;              // the title will now bloom into full colour
   for (let i = 0; i < 7; i++) if (!purified.includes(i)) purified.push(i);
   snd(S_GOAL);
 }
@@ -153,11 +155,11 @@ function reset() {
 }
 
 // Title -> opening story cards -> play. A key steps the opening; on the ending
-// (once its last card has settled) a key plays again.
+// (once its last card has settled) a key returns to the now-colour title.
 addEventListener('keydown', () => {
   if (!started) { started = true; openIdx = 0; }        // begin the opening
   else if (openIdx >= 0) { if (++openIdx >= OPEN.length) openIdx = -1; } // step / dismiss
-  else if (won && winT > 270) reset();                  // replay after the ending settles
+  else if (won && winT > 270) { reset(); started = false; } // ending -> colour title
 });
 
 // Dev-only inspection hook (stripped from the production build).
@@ -227,10 +229,20 @@ const A = (a) => ('0' + (Math.max(0, Math.min(255, a * 255 | 0))).toString(16)).
 const titleHorse = { x: WIDTH / 2 - 6, y: 184, w: 12, h: 16, el: 6, face: 1, grounded: true, vx: 0, gflip: 1 };
 function drawTitle() {
   const t = performance.now();
+  // Once beaten, the world behind the title is full of the colour you returned.
+  if (beaten) {
+    ctx.globalAlpha = 0.16;
+    for (let i = 0; i < 7; i++) { ctx.fillStyle = COLORS[i]; ctx.fillRect(0, HEIGHT * i / 7, WIDTH, HEIGHT / 7 + 1); }
+    ctx.globalAlpha = 1;
+  }
   ctx.textAlign = 'center';
-  // Title
-  ctx.fillStyle = '#ececf2';
+  // Title — a rainbow wordmark after the world is coloured, pale before.
   ctx.font = 'bold 42px monospace';
+  if (beaten) {
+    const grad = ctx.createLinearGradient(WIDTH / 2 - 72, 0, WIDTH / 2 + 72, 0);
+    for (let i = 0; i < 7; i++) grad.addColorStop(i / 6, COLORS[i]);
+    ctx.fillStyle = grad;
+  } else ctx.fillStyle = '#ececf2';
   ctx.fillText('PRISM', WIDTH / 2, 74);
   ctx.fillStyle = '#b45cff';
   ctx.font = '15px monospace';
@@ -239,6 +251,11 @@ function drawTitle() {
   for (let i = 0; i < 7; i++) {
     ctx.fillStyle = COLORS[i];
     ctx.beginPath(); ctx.arc(WIDTH / 2 - 30 + i * 10, 116, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  // After the ending: the myth's closing line, now the reason our world is bright.
+  if (beaten) {
+    ctx.fillStyle = '#cfcfda'; ctx.font = '9px monospace';
+    ctx.fillText('the horn is gone — but the world it left is bright', WIDTH / 2, 132);
   }
   // The unicorn, its coat cycling through the spectrum it seeks
   titleHorse.el = Math.floor(t / 550) % 7;
