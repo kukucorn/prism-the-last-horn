@@ -38,6 +38,10 @@ const LIGHT_CD = 48;       // cooldown (~0.8s)
 
 // Nature (Green) double jump + glide (a slow, far-carrying glide-flight).
 const GLIDE_FALL = 42;     // capped fall speed while gliding (low -> long glide)
+const GLIDE_DUR = 10;      // frames a glide can be sustained per airtime (~0.17s) —
+                            // uncapped, a slow-enough fall drifts horizontally
+                            // forever, turning any bottomless gravity-flip void
+                            // into a no-flip-needed cheese
 const DJ_DUR = 12;         // frames the double-jump ring animates
 
 // Water (Blue) buoyant float — only works while submerged in a water zone.
@@ -47,7 +51,9 @@ const FLOAT_RISE = 140;    // capped upward drift speed
 const SINK_GRAV = 0.3;     // gentle buoyant sink when in water but not rising
 
 // Gravity (Violet) flip.
-const GRAV_CD = 10;        // cooldown so you can't strobe the flip
+const GRAV_CD = 45;        // cooldown (~0.75s, matches other skills) so repeated
+                            // flips can't zero out vy every few frames and let
+                            // you hover/"fly" indefinitely without ever landing
 
 export function makePlayer(x, y) {
   return {
@@ -70,6 +76,7 @@ export function makePlayer(x, y) {
     bx0: 0, by0: 0, // blink origin (for the streak)
     doubleUsed: false, // Nature double jump spent this airtime
     gliding: false, // currently gliding
+    glideT: GLIDE_DUR, // glide frames left this airtime
     djT: 0,         // double-jump ring animation frames
     floating: false, // Water buoyant float active
     inWater: false, // submerged in a water zone (enables float)
@@ -210,9 +217,11 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
     p.vy = Math.max(-MAX_FALL, Math.min(MAX_FALL, p.vy));
   }
 
-  // Nature glide: holding the skill while falling (with gravity) caps the descent.
-  p.gliding = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy * g > 0;
-  if (p.gliding) p.vy = g > 0 ? Math.min(p.vy, GLIDE_FALL) : Math.max(p.vy, -GLIDE_FALL);
+  // Nature glide: holding the skill while falling (with gravity) caps the descent,
+  // but only for GLIDE_DUR frames per airtime (see above).
+  const wantGlide = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy * g > 0;
+  p.gliding = wantGlide && p.glideT > 0;
+  if (p.gliding) { p.vy = g > 0 ? Math.min(p.vy, GLIDE_FALL) : Math.max(p.vy, -GLIDE_FALL); p.glideT--; }
 
   // --- Integrate + collide (X then Y) --------------------------------------
   if (moveX(p, p.vx * dt, world)) p.vx = 0;
@@ -221,6 +230,7 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   if (vhit !== 0) p.vy = 0; // floor or ceiling stops vertical motion
   if (p.grounded) {
     p.doubleUsed = false; // recharge the double jump on landing
+    p.glideT = GLIDE_DUR; // recharge the glide window on landing
     if (!wasGrounded) snd(S_LAND);
   }
 
