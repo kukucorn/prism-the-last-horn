@@ -1,9 +1,11 @@
 // Final boss — THE MONOCHROME: a relentless wall of un-colour that chases the
 // unicorn from the left through the final runner. There is no trading blows;
-// the exam is to OUTRUN it, swapping to the right element and using every skill
-// (dash, double-jump, float, blink, gravity-flip, freeze...) to clear each
-// section before the wall reaches you. Touch it and you're thrown back to the
-// last checkpoint. Reach the far light and the world's colour is restored.
+// the exam is to OUTRUN it, using every skill (dash, slam, blink, double-jump,
+// float, freeze, gravity-flip...) to clear each zone before the wall reaches
+// you — each zone force-equips its own element, in a colour-lined stretch of
+// the level, so there's nothing to pick, only to execute. Touch the wall and
+// you're thrown back to the last checkpoint. Reach the far light and the
+// world's colour is restored.
 
 const H = 270;
 const CHASE_SP = 72;    // px/s the wall creeps forward

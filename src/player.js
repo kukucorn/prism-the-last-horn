@@ -1,10 +1,10 @@
 // Player body + precision-platformer movement. Units are logical px per second;
 // the loop steps this at a fixed dt (1/60s). Timers are counted in frames since
 // the spec calls out "coyote time (6 frames)".
-import { input, JUMP, SKILL, SWAP } from './input.js';
+import { input, JUMP, SKILL } from './input.js';
 import { moveX, moveY, overlap } from './physics.js';
 import { RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO, VIOLET } from './palette.js';
-import { snd, S_JUMP, S_LAND, S_DASH, S_SLAM, S_BLINK, S_SWAP, S_DJUMP, S_GRAV } from './sfx.js';
+import { snd, S_JUMP, S_LAND, S_DASH, S_SLAM, S_BLINK, S_DJUMP, S_GRAV } from './sfx.js';
 
 // Tuning.
 const GRAVITY = 1400;
@@ -18,7 +18,6 @@ const JUMP_VEL = 360;      // launch velocity
 const JUMP_CUT = 0.45;     // release mid-rise -> keep this fraction of vy
 const COYOTE = 6;          // frames you can still jump after leaving a ledge
 const BUFFER = 6;          // frames a jump press is remembered before landing
-const SWAP_DELAY = 6;      // ~0.1s element-swap lock
 
 // Fire (Red) dash.
 const DASH_SPEED = 360;    // px/s burst forward
@@ -36,12 +35,7 @@ const BLINK_DIST = 64;     // px teleported forward
 const BLINK_DUR = 10;      // frames the light streak lingers
 const LIGHT_CD = 48;       // cooldown (~0.8s)
 
-// Nature (Green) double jump + glide (a slow, far-carrying glide-flight).
-const GLIDE_FALL = 42;     // capped fall speed while gliding (low -> long glide)
-const GLIDE_DUR = 10;      // frames a glide can be sustained per airtime (~0.17s) —
-                            // uncapped, a slow-enough fall drifts horizontally
-                            // forever, turning any bottomless gravity-flip void
-                            // into a no-flip-needed cheese
+// Nature (Green) double jump.
 const DJ_DUR = 12;         // frames the double-jump ring animates
 
 // Water (Blue) buoyant float — only works while submerged in a water zone.
@@ -63,8 +57,6 @@ export function makePlayer(x, y) {
     coyote: 0,
     buffer: 0,
     el: 0,          // current element index (0..6)
-    unlocked: 1,    // elements available so far (progressive: +1 per stage cleared)
-    swapLock: 0,
     face: 1,
     glow: 0,        // brief feedback on skill press
     dashT: 0,       // remaining dash frames
@@ -75,8 +67,6 @@ export function makePlayer(x, y) {
     blinkT: 0,      // light-streak animation frames
     bx0: 0, by0: 0, // blink origin (for the streak)
     doubleUsed: false, // Nature double jump spent this airtime
-    gliding: false, // currently gliding
-    glideT: GLIDE_DUR, // glide frames left this airtime
     djT: 0,         // double-jump ring animation frames
     floating: false, // Water buoyant float active
     inWater: false, // submerged in a water zone (enables float)
@@ -89,13 +79,6 @@ export function makePlayer(x, y) {
 // plows through and shatters them.
 export function updatePlayer(p, dt, solids, hazards, rocks) {
   const world = rocks && rocks.length ? solids.concat(rocks) : solids;
-  // --- Element swap (0.1s lock) -------------------------------------------
-  if (p.swapLock > 0) p.swapLock--;
-  if (input.pressed(SWAP) && p.swapLock === 0) {
-    p.el = (p.el + 1) % (p.unlocked || 7);
-    p.swapLock = SWAP_DELAY;
-    snd(S_SWAP);
-  }
   if (p.glow > 0) p.glow--;
   if (p.cd > 0) p.cd--;
   if (p.shockT > 0) p.shockT--;
@@ -217,11 +200,6 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
     p.vy = Math.max(-MAX_FALL, Math.min(MAX_FALL, p.vy));
   }
 
-  // Nature glide: holding the skill while falling (with gravity) caps the descent,
-  // but only for GLIDE_DUR frames per airtime (see above).
-  const wantGlide = p.el === GREEN && input.down(SKILL) && !p.grounded && p.vy * g > 0;
-  p.gliding = wantGlide && p.glideT > 0;
-  if (p.gliding) { p.vy = g > 0 ? Math.min(p.vy, GLIDE_FALL) : Math.max(p.vy, -GLIDE_FALL); p.glideT--; }
 
   // --- Integrate + collide (X then Y) --------------------------------------
   if (moveX(p, p.vx * dt, world)) p.vx = 0;
@@ -230,7 +208,6 @@ export function updatePlayer(p, dt, solids, hazards, rocks) {
   if (vhit !== 0) p.vy = 0; // floor or ceiling stops vertical motion
   if (p.grounded) {
     p.doubleUsed = false; // recharge the double jump on landing
-    p.glideT = GLIDE_DUR; // recharge the glide window on landing
     if (!wasGrounded) snd(S_LAND);
   }
 

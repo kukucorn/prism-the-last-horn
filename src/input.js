@@ -1,6 +1,6 @@
 // Input manager — maps physical keys to logical actions and exposes both
 // "held" state and per-tick "just pressed / released" edges. The platformer
-// (coyote time, jump buffering, element swap) is built on these edges.
+// (coyote time, jump buffering) is built on these edges.
 //
 // Edges are LATCHED in the event handlers, not derived by sampling held-state
 // each tick: a tap that presses and releases inside a single frame still
@@ -12,8 +12,7 @@ export const LEFT = 0;
 export const RIGHT = 1;
 export const JUMP = 2;
 export const SKILL = 3;
-export const SWAP = 4;
-const COUNT = 5;
+const COUNT = 4;
 
 // Physical key (event.code) -> action. Multiple keys can share an action.
 const MAP = {
@@ -21,7 +20,6 @@ const MAP = {
   ArrowRight: RIGHT, KeyD: RIGHT,
   ArrowUp: JUMP, KeyW: JUMP, Space: JUMP,
   KeyX: SKILL, KeyJ: SKILL,
-  KeyC: SWAP, KeyL: SWAP, ShiftLeft: SWAP, ShiftRight: SWAP,
 };
 
 const held = new Uint8Array(COUNT);      // 1 while any bound key is down

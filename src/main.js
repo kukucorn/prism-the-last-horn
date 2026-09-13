@@ -4,7 +4,7 @@
 // fixed 1/60s step (accumulator); rendering interpolates for smoothness. The
 // world is monochrome; reaching a stage's goal triggers a colour-reveal
 // "purification" that floods that element's colour and advances the stage.
-import { COLORS, NAMES, INDIGO } from './palette.js';
+import { COLORS, NAMES, RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO, VIOLET } from './palette.js';
 import { makePlayer, updatePlayer } from './player.js';
 import { loadLevel, LEVEL_COUNT } from './level.js';
 import { overlap } from './physics.js';
@@ -49,6 +49,17 @@ let boss = null;         // boss instance while on the arena stage
 let introT = 0;          // boss entrance sequence frames remaining (0 = fighting)
 let camX = 0;            // horizontal camera offset (0 on single-screen stages)
 let lastCheck = null;    // last checkpoint passed on the chase runner
+let lastCheckIdx = -1;   // its index into lv.checks, for zone-locking below
+
+// The chase runner's gauntlets are each built around one element (a low
+// ceiling that only Fire's dash survives, a rock only Earth's slam breaks,
+// ...). Letting the player keep whatever they're already holding meant a
+// previously-unlocked skill could just walk around the intended one — Light
+// blinking clean over the Earth rock, for instance. Each zone force-equips
+// its own element (index = the checkpoint that opened it); there is no swap
+// key at all any more. First entry is null (the run opens already on Fire,
+// nothing to lock yet); last entry is null (the open final sprint).
+const ZONE_EL = [null, RED, ORANGE, YELLOW, GREEN, BLUE, INDIGO, INDIGO, VIOLET, GREEN, null];
 let won = false;         // world fully purified (victory)
 let winT = 0;            // frames since victory (drives the ending timeline)
 let started = false;     // false = title screen; true = playing
@@ -56,8 +67,7 @@ let openIdx = -1;        // >=0 while stepping the opening story cards
 let beaten = false;      // the world has been coloured once -> title blooms
 let dead = false;        // awaiting Continue after a death (freeze until a key)
 
-// Contextual control tooltips: teach each stage's skill key on first arrival,
-// and the colour-swap key once it first matters (the boss duel).
+// Contextual control tooltip: teach each stage's skill key on first arrival.
 const SKILL_HINT = [
   'press [X] to DASH across the spikes',
   'JUMP, then press [X] in the air to SLAM through rock',
@@ -68,8 +78,6 @@ const SKILL_HINT = [
   'press [X] anytime to FLIP gravity — floor and ceiling swap',
 ];
 let skillUsed = false;   // player demonstrated this stage's skill (hides its hint)
-let swapUsed = false;    // player has swapped colour at least once (hides swap hint)
-let prevEl = 0;          // last frame's element, to detect a swap
 
 // Full-screen skill tip: freezes play once per stage on first arrival, so a
 // new mechanic (e.g. Earth's jump-then-slam) is explained before you're
@@ -103,9 +111,9 @@ let prevX = player.x, prevY = player.y;
 // Progressive unlock: on stage i you hold elements 0..i (the newest = element i
 // is the one this stage is built around). Entering a stage equips it by default.
 function syncElements() {
-  player.unlocked = Math.min(lvi + 1, 7);
-  player.el = Math.min(lvi, 6);
-  prevEl = player.el;
+  // The chase opens on a Fire gauntlet, not the newest element (Violet) —
+  // start the unicorn there instead of on whatever stage 7 last taught.
+  player.el = lvi === BOSS_STAGE ? RED : Math.min(lvi, 6);
   skillUsed = false; // re-show the skill hint for the newly-introduced element
 }
 syncElements();
@@ -138,6 +146,7 @@ function advance() {
   boss = lvi === BOSS_STAGE ? makeBoss() : null;
   introT = boss ? INTRO_DUR : 0;
   lastCheck = boss ? lv.spawn : null;
+  lastCheckIdx = -1;
   if (boss) snd(S_OMEN);            // the Monochrome looms
   maybeShowTip();
   if (import.meta.env.DEV) window.LV = lv;
@@ -181,7 +190,7 @@ function onWin() {
 // Restart from stage 1 (used by "play again" after victory).
 function reset() {
   lvi = 0; lv = loadLevel(0); purified.length = 0;
-  clearT = 0; boss = null; introT = 0; camX = 0; lastCheck = null; won = false;
+  clearT = 0; boss = null; introT = 0; camX = 0; lastCheck = null; lastCheckIdx = -1; won = false;
   winT = 0; openIdx = -1; tipSeen.fill(0);
   respawn(); syncElements(); maybeShowTip();
 }
@@ -204,7 +213,7 @@ if (import.meta.env.DEV) {
   window.P = player; window.LV = lv;
   window.stage = () => ({ lvi, clearT, purified: [...purified], bossHp: boss && boss.hp, won });
   window.getBoss = () => boss;
-  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; dead = false; showTip = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; };
+  window.goStage = (i) => { lvi = i; lv = loadLevel(i); respawn(); syncElements(); window.LV = lv; clearT = 0; won = false; dead = false; showTip = false; boss = i === BOSS_STAGE ? makeBoss() : null; introT = boss ? INTRO_DUR : 0; lastCheck = boss ? lv.spawn : null; lastCheckIdx = -1; };
 }
 
 function update() {
@@ -236,12 +245,9 @@ function update() {
   player.inWater = lv.water.some((w) => overlap(player, w)); // gates Water's float
   updatePlayer(player, STEP, lv.solids, lv.hazards, lv.rocks);
 
-  // Tooltip triggers: any active-skill press (glow) clears the skill hint; the
-  // passive Ice skill clears it on the first freeze (handled below). A colour
-  // change clears the swap hint for good.
+  // Tooltip trigger: any active-skill press (glow) clears the skill hint; the
+  // passive Ice skill clears it on the first freeze (handled below).
   if (player.el !== INDIGO && player.glow > 0) skillUsed = true;
-  if (player.el !== prevEl) swapUsed = true;
-  prevEl = player.el;
 
   // Hazards: frozen spikes are inert; Ice freezes any it touches; else lethal.
   let died = player.y > HEIGHT + 40;
@@ -258,7 +264,9 @@ function update() {
   if (boss) {
     // Chase runner: record checkpoints, advance the wall, win at the far light.
     const cx = player.x + player.w / 2;
-    for (const c of lv.checks) if (cx > c.x && (!lastCheck || c.x > lastCheck.x)) lastCheck = c;
+    lv.checks.forEach((c, i) => { if (cx > c.x && (!lastCheck || c.x > lastCheck.x)) { lastCheck = c; lastCheckIdx = i; } });
+    const zoneEl = ZONE_EL[lastCheckIdx];
+    if (zoneEl != null) player.el = zoneEl; // force-equip this gauntlet's element
     updateBoss(boss, player, die);        // caught -> Continue prompt
     if (dead) return;
     if (lv.goal && overlap(player, lv.goal)) onWin();
@@ -313,7 +321,7 @@ function drawTitle() {
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#83838f';
   ctx.font = '9px monospace';
-  ctx.fillText('[<>] move    [^] jump    [X] skill    [C] swap colour', WIDTH / 2, 250);
+  ctx.fillText('[<>] move    [^] jump    [X] skill', WIDTH / 2, 250);
   ctx.textAlign = 'left';
 }
 
@@ -439,6 +447,28 @@ function render(alpha) {
     ctx.globalAlpha = 1;
   }
 
+  // Zone boundaries (boss run only): a coloured line at each checkpoint that
+  // actually CHANGES the locked element — since there's no swap key any
+  // more, this line is the only warning that the required element is about
+  // to change underfoot. Skip checkpoints that repeat the same colour as
+  // whatever's already equipped (the run opens on Fire already, and Ice's
+  // two gauntlets are both Ice) — a line with nothing changing under it is
+  // just confusing.
+  if (boss) { let prevEl = RED;
+  for (let i = 0; i < lv.checks.length; i++) {
+    const zEl = ZONE_EL[i];
+    if (zEl == null) continue;
+    if (zEl === prevEl) continue;
+    prevEl = zEl;
+    const lx = lv.checks[i].x;
+    ctx.strokeStyle = COLORS[zEl];
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, HEIGHT); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  }
+
   // Interpolated player position.
   const x = prevX + (player.x - prevX) * alpha;
   const y = prevY + (player.y - prevY) * alpha;
@@ -471,20 +501,6 @@ function render(alpha) {
     ctx.beginPath();
     ctx.arc(x + player.w / 2, y + player.h, 3 + t * 16, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-  // Nature glide wings.
-  if (player.gliding) {
-    ctx.fillStyle = COLORS[3];
-    ctx.globalAlpha = 0.35;
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(x + player.w / 2, y + 4);
-      ctx.lineTo(x + player.w / 2 - player.face * 10, y - 4 + s * 8);
-      ctx.lineTo(x + player.w / 2 - player.face * 4, y + 8);
-      ctx.closePath();
-      ctx.fill();
-    }
     ctx.globalAlpha = 1;
   }
   // Water bubbles.
@@ -634,10 +650,10 @@ function render(alpha) {
   }
 
   // Contextual control tooltip (only during active play): teach the stage's
-  // skill key, or the colour-swap key once the boss makes it matter.
+  // skill key, or the boss run's colour-line convention once it matters.
   if (clearT === 0 && !won && !dead && !showTip) {
     let tip = null, col = '#fff';
-    if (boss && !swapUsed) { tip = 'RUN! swap [C] to each section\'s skill and use [X]'; col = COLORS[player.el]; }
+    if (boss && !skillUsed) { tip = 'RUN! the colour line marks each zone — press [X] for its skill'; col = COLORS[player.el]; }
     else if (!boss && !skillUsed) { tip = SKILL_HINT[lvi % 7]; col = COLORS[lvi % 7]; }
     if (tip) {
       const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 260);
@@ -682,7 +698,7 @@ function render(alpha) {
     ctx.fillStyle = COLORS[player.el];
     ctx.fillText(NAMES[player.el], ex, HEIGHT - 8);
     ctx.fillStyle = '#888';
-    ctx.fillText('   [C] swap   [<>] move   [^] jump   [X] skill', ex + ctx.measureText(NAMES[player.el]).width, HEIGHT - 8);
+    ctx.fillText('   [<>] move   [^] jump   [X] skill', ex + ctx.measureText(NAMES[player.el]).width, HEIGHT - 8);
 
     // Skill-cooldown gauge (Fire/Earth/Light have real cooldowns now).
     const ready = player.cd <= 0 && player.dashT === 0 && !player.slam;
